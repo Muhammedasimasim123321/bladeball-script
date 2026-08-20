@@ -25,7 +25,10 @@ local function isBladeBall()
     return false
 end
 
-if not isBladeBall() then return end
+if not isBladeBall() then 
+    print("❌ Bu script sadece Blade Ball oyununda çalışır!")
+    return 
+end
 
 local SCRIPT_URL = "https://raw.githubusercontent.com/Muhammedasimasim123321/bladeball-script/main/bladeball.lua"
 
@@ -35,5 +38,12 @@ end)
 
 if success and result and #result > 0 then
     local chunk = load_string(result)
-    if chunk then pcall(chunk) end
+    if chunk then 
+        pcall(chunk) 
+        print("✅ Blade Ball script yüklendi!")
+    else
+        print("❌ Script yüklenirken hata oluştu!")
+    end
+else
+    print("❌ Script indirilemedi! İnternet bağlantınızı kontrol edin.")
 end

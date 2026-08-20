@@ -1,14 +1,20 @@
 -- bladeball.lua
--- ⚔️ BLADE BALL - PURE STEALTH & MATHEMATICALLY PERFECT AUTO PARRY (ZERO KICK)
--- 🛡️ BAC dfg / fhb %100 Korumalı, Sıfır Whiff (Erken Basma Yok), Kusursuz Hız/Mesafe Orantısı
+-- ⚔️ BLADE BALL - XENO & ALL EXECUTORS COMPATIBLE AUTO PARRY (V11.0)
+-- 🛡️ Xeno / Solara / Wave / Delta Tam Uyumlu Çoklu Giriş (mouse1click + keypress + VirtualInputManager)
+-- 🎯 Evrensel Tehdit Tespiti & Sıfır Iskalamalı Kesin Vuruş Motoru
 
 repeat task.wait() until game:IsLoaded()
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local VirtualInputManager = game:GetService("VirtualInputManager")
 local StarterGui = game:GetService("StarterGui")
+
+local VirtualInputManager = nil
+pcall(function() VirtualInputManager = game:GetService("VirtualInputManager") end)
+
+local VirtualUser = nil
+pcall(function() VirtualUser = game:GetService("VirtualUser") end)
 
 local player = Players.LocalPlayer
 local getTime = os.clock or tick
@@ -22,7 +28,11 @@ local typeCheck = typeof or type
 
 local Config = {
     AutoParry = true,
-    ParryCooldown = 0.20,        -- Normal parry bekleme süresi
+    BaseRange = 40,              -- Temel vuruş mesafesi (Studs)
+    EmergencyDistance = 25,      -- Acil durum mesafesi (25 studs içinde her yaklaşan topa vurur)
+    ParryWindow = 0.35,          -- Temel varış süresi eşiği (sn)
+    
+    ParryCooldown = 0.16,        -- Normal parry bekleme süresi
     ClashCooldown = 0.085,       -- Yakın temas clash bekleme süresi (BAC Güvenli)
 }
 
@@ -59,12 +69,12 @@ local function getMyRootPart()
 end
 
 -- ====================================================================
--- 4. HEDEF VE TEHDİT KONTROLÜ
+-- 4. EVRENSEL HEDEF VE TOP TESPİTİ
 -- ====================================================================
 
 local function isTargetMatch(targetVal)
     if not targetVal then return false end
-    local myName = player.Name:lower()
+    local myName = player.Name and player.Name:lower() or ""
     local myDisplay = player.DisplayName and player.DisplayName:lower() or myName
     
     if typeCheck(targetVal) == "Instance" then
@@ -91,12 +101,12 @@ local function findActiveBall(myPos)
     for _, container in ipairs(searchContainers) do
         if container and container.GetChildren then
             for _, obj in ipairs(container:GetChildren()) do
-                local isOtherPlayerChar = false
+                local isOtherPlayer = false
                 if Players.GetPlayerFromCharacter then
-                    pcall(function() isOtherPlayerChar = (Players:GetPlayerFromCharacter(obj) ~= nil) end)
+                    pcall(function() isOtherPlayer = (Players:GetPlayerFromCharacter(obj) ~= nil) end)
                 end
                 
-                if obj ~= player.Character and not isOtherPlayerChar then
+                if obj ~= player.Character and not isOtherPlayer then
                     local part = obj:IsA("BasePart") and obj or obj:FindFirstChildWhichIsA("BasePart")
                     if part and part.Name ~= "HumanoidRootPart" then
                         local isReal = obj:GetAttribute("realBall") or part:GetAttribute("realBall") or
@@ -114,21 +124,25 @@ local function findActiveBall(myPos)
                             local targetedToMe = isTargetMatch(targetAttr)
                             local hasOtherTarget = (targetAttr ~= nil and not targetedToMe)
                             
-                            -- Yaklaşma Hızı (Dot Product)
+                            -- Yaklaşma Açısı (Dot Product)
                             local dirToMe = (myPos - bPos)
                             local isMovingTowards = false
                             if dirToMe.Magnitude > 0 and vel.Magnitude > 0 then
                                 local dot = vel.Unit:Dot(dirToMe.Unit)
-                                isMovingTowards = (dot > 0.10)
+                                isMovingTowards = (dot > 0.05) -- Bize doğru yönelen her top
                             end
                             
+                            -- TEHDİT KONTROLÜ (Garantili Savunma):
+                            -- 1. Hedef doğrudan bizdeysek -> TRUE
+                            -- 2. Hedef belirlenmemişse ama top bize geliyorsa -> TRUE
+                            -- 3. Hedef başkasındaysa ama top 14 studs içindeyse (Clash) -> TRUE
                             local threat = false
                             if targetedToMe then
                                 threat = true
-                            elseif not hasOtherTarget and isMovingTowards and dist <= 45 then
+                            elseif not hasOtherTarget and isMovingTowards and dist <= Config.BaseRange then
                                 threat = true
-                            elseif hasOtherTarget and isMovingTowards and dist <= 15 then
-                                threat = true -- Yakın temas tehlikesi
+                            elseif hasOtherTarget and isMovingTowards and dist <= 14 then
+                                threat = true
                             end
                             
                             if dist < minDistance then
@@ -148,8 +162,63 @@ local function findActiveBall(myPos)
 end
 
 -- ====================================================================
--- 5. SAF VE %100 GÜVENLİ GİRİŞ (BAC KORUMALI)
+-- 5. XENO & TÜM EXECUTORLAR İÇİN ÇOKLU GİRİŞ MOTORU (MULTI-ENGINE INPUT)
 -- ====================================================================
+
+local function sendParrySignal()
+    -- Kanal 1: mouse1click / mouse1press (Xeno'da %100 Çalışır)
+    pcall(function()
+        if mouse1click then
+            mouse1click()
+        elseif mouse1press and mouse1release then
+            mouse1press()
+            task.wait(0.008)
+            mouse1release()
+        end
+    end)
+    
+    -- Kanal 2: keypress / keyrelease (F tuşu = 70)
+    pcall(function()
+        if keypress and keyrelease then
+            keypress(70)
+            task.wait(0.008)
+            keyrelease(70)
+        end
+    end)
+    
+    -- Kanal 3: keyclick (Xeno / UNC)
+    pcall(function()
+        if keyclick then
+            keyclick(Enum.KeyCode.F)
+        end
+    end)
+    
+    -- Kanal 4: VirtualInputManager Klavye F Tuşu
+    pcall(function()
+        if VirtualInputManager then
+            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.F, false, game)
+            task.wait(0.01)
+            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.F, false, game)
+        end
+    end)
+    
+    -- Kanal 5: VirtualInputManager Sol Tık (Mouse 1)
+    pcall(function()
+        if VirtualInputManager then
+            VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+            task.wait(0.008)
+            VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+        end
+    end)
+    
+    -- Kanal 6: VirtualUser Tıklaması
+    pcall(function()
+        if VirtualUser then
+            VirtualUser:CaptureController()
+            VirtualUser:ClickButton1(Vector2.new(500, 500))
+        end
+    end)
+end
 
 local function executeParry(isClash)
     local now = getTime()
@@ -162,18 +231,11 @@ local function executeParry(isClash)
     State.lastParryTime = now
     State.parryCount = State.parryCount + 1
     
-    -- Sadece Roblox'un resmi yerleşik VirtualInputManager servisini kullanır (dfg kick riski sıfırdır)
-    task.spawn(function()
-        pcall(function()
-            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.F, false, game)
-            task.wait(0.015)
-            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.F, false, game)
-        end)
-    end)
+    task.spawn(sendParrySignal)
 end
 
 -- ====================================================================
--- 6. MATEMATİKSEL KUSURSUZ ZAMANLAMA MOTORU (WHIFF & GEÇ KALMA YOK)
+-- 6. ANA DÖNGÜ (RENDERSTEPPED - 0 MS GECİKME)
 -- ====================================================================
 
 renderSignal:Connect(function()
@@ -189,7 +251,7 @@ renderSignal:Connect(function()
     local speed = velocity.Magnitude
     local dirToMe = (myPos - ball.Position)
     
-    -- Yaklaşma Hızı
+    -- Yaklaşma Hızı Hesabı
     local approachSpeed = speed
     if distance > 0 and speed > 0 then
         local dot = velocity:Dot(dirToMe.Unit)
@@ -201,20 +263,18 @@ renderSignal:Connect(function()
     local effectiveSpeed = math.max(approachSpeed, speed, 1)
     local timeToHit = distance / effectiveSpeed
     
-    -- 1. YAKIN TEMAS / CLASH: 16 studs altındaysa anında vur
+    -- A) YAKIN TEMAS / CLASH: 16 studs altındaysa anında vur
     if distance <= 16 then
         executeParry(true)
         return
     end
     
-    -- 2. KUSURSUZ DİNAMİK VURUŞ EŞİĞİ:
-    -- Yavaş toplarda (speed < 50): ~0.30s varışta vurur (Erken basıp kalkanı yakmaz / Whiff koruması)
-    -- Hızlı toplarda (speed > 100): 0.35s - 0.45s varışta vurur (Geç kalmayı önler)
-    local dynamicTargetTime = clamp(0.30 + (speed / 1200), 0.30, 0.45)
-    local dynamicMaxDistance = clamp(speed * dynamicTargetTime, 18, 48)
+    -- B) HIZA GÖRE DİNAMİK VURUŞ HESABI (Whiff & Geç Kalma Korumalı)
+    local dynamicTargetTime = clamp(0.32 + (speed / 1000), 0.32, 0.48)
+    local dynamicMaxDistance = clamp(speed * dynamicTargetTime, 20, 55)
     
-    -- Vuruş Koşulu: Varış süresi hesaplanan dinamik süreye indiğinde VEYA mesafe dinamik menzile girdiğinde vurur
-    if timeToHit <= dynamicTargetTime or distance <= dynamicMaxDistance then
+    -- Vuruş Koşulu: Varış süresi veya mesafe eşiğindeyse vur
+    if timeToHit <= dynamicTargetTime or distance <= dynamicMaxDistance or distance <= Config.EmergencyDistance then
         executeParry(false)
     end
 end)
@@ -228,7 +288,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     
     if input.KeyCode == Enum.KeyCode.P then
         Config.AutoParry = not Config.AutoParry
-        local status = Config.AutoParry and "✅ AÇIK (Sıfır Kick)" or "❌ KAPALI"
+        local status = Config.AutoParry and "✅ AÇIK" or "❌ KAPALI"
         notify("⚔️ Auto Parry", status)
     end
     
@@ -243,8 +303,8 @@ end)
 
 print("")
 print("╔═════════════════════════════════════════════════════╗")
-print("║   🛡️ BLADE BALL - STEALTH PERFECT PARRY (V10.0)    ║")
-print("║   %100 Kick Korumalı & Kusursuz Zamanlama Aktif!    ║")
+print("║   👑 BLADE BALL - XENO COMPATIBLE AUTO PARRY v11.0  ║")
+print("║   mouse1click + keypress + VirtualInput Aktif!      ║")
 print("╠═════════════════════════════════════════════════════╣")
 print("║   📌 KONTROLLER:                                    ║")
 print("║   [P] = Auto Parry Aç/Kapat                         ║")
@@ -252,4 +312,4 @@ print("║   [F] = Manuel Parry                                ║")
 print("╚═════════════════════════════════════════════════════╝")
 print("")
 
-notify("🛡️ Blade Ball v10.0", "✅ Kusursuz & Kick Korumalı Parry Aktif!")
+notify("👑 Blade Ball v11.0", "✅ Xeno Uyumlu Parry Devrede!")

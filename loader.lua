@@ -43,7 +43,7 @@ if success and result then
     if chunk then
         chunk()
     else
-        warn("Script hatası!")
+        warn("Script derleme hatası!")
     end
 else
     warn("Bağlantı hatası!")

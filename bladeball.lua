@@ -1,5 +1,21 @@
 -- bladeball.lua
--- ⚔️ Blade Ball Ultimate v4.1 (Kararlı Sürüm)
+-- ⚔️ Blade Ball Ultimate v5.0 (BAC Dostu - Sessiz Mod)
+
+-- ============================================
+-- 1. GÜVENLİ BAŞLANGIÇ (5 SANİYE BEKLE)
+-- ============================================
+
+-- ÖNCE BEKLE! BAC oyun başında daha hassas
+print("⏳ Script 5 saniye bekleyecek...")
+task.wait(5)
+
+-- Oyun tam yüklendi mi kontrol et
+repeat task.wait() until game:IsLoaded()
+task.wait(2) -- Ekstra bekle
+
+-- ============================================
+-- 2. SERVİSLER
+-- ============================================
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -8,55 +24,43 @@ local VirtualInputManager = game:GetService("VirtualInputManager")
 local CoreGui = game:GetService("CoreGui")
 local player = Players.LocalPlayer
 
--- ============================================
--- 1. GÜVENLİ BAŞLANGIÇ
--- ============================================
-
+-- Karakter hazır olana kadar bekle
 local character = player.Character or player.CharacterAdded:Wait()
+task.wait(1) -- Karakter otursun
 local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
 
 -- ============================================
--- 2. AYARLAR (Dengeli)
+-- 3. AYARLAR
 -- ============================================
 
 local Settings = {
     AutoParry = false,
-    ParryRange = 28,
-    ParryMinDelay = 0.15,
-    ParryMaxDelay = 0.30,
-    ParryCooldown = 0.4,
-    ParrySuccessRate = 0.85,
+    ParryRange = 30,           -- Sadece bu mesafede çalışır
+    ParryMinDelay = 0.20,      -- Daha yavaş (insan gibi)
+    ParryMaxDelay = 0.45,
+    ParryCooldown = 0.5,
+    ParrySuccessRate = 0.80,   -- Daha düşük (mükemmel değil)
     
-    AutoAbility = false,
-    AbilityRange = 18,
-    AbilityCooldown = 2.5,
-    
-    AutoBlock = false,
-    BlockRange = 25,
-    BlockCooldown = 1.2,
-    
-    ESP = false,
-    ESPColor = Color3.fromRGB(255, 0, 0),
+    -- Sadece top yakınındayken çalışır
+    ActivationRange = 40,      -- Bu mesafeden sonra aktif olur
 }
 
 -- ============================================
--- 3. DURUM YÖNETİCİSİ (Güvenli)
+-- 4. DURUM
 -- ============================================
 
 local State = {
     parryCooldown = false,
-    abilityCooldown = false,
-    blockCooldown = false,
     lastParryTime = 0,
-    lastAbilityTime = 0,
-    lastBlockTime = 0,
     isRunning = true,
+    isActive = false,          -- Sadece top yakınsa aktif
     ballCache = nil,
     ballCacheTime = 0,
+    initialDelay = true,
 }
 
 -- ============================================
--- 4. RANDOM FONKSİYONLAR
+-- 5. RANDOM
 -- ============================================
 
 local function randomFloat(min, max)
@@ -72,20 +76,18 @@ local function chance(percentage)
 end
 
 -- ============================================
--- 5. TOP BULMA (Önbellekli ve Güvenli)
+-- 6. TOP BULMA (Önbellekli)
 -- ============================================
 
 local function findBall()
     local now = tick()
     
-    -- Önbellekten dön
-    if State.ballCache and now - State.ballCacheTime < 0.5 then
+    if State.ballCache and now - State.ballCacheTime < 0.3 then
         if State.ballCache and State.ballCache.Parent then
             return State.ballCache
         end
     end
     
-    -- Yeni top ara
     for _, v in pairs(workspace:GetChildren()) do
         if v:IsA("BasePart") and (v.Name == "Ball" or string.find(v.Name, "Ball")) then
             if v:FindFirstChild("Handle") or v:FindFirstChild("Mesh") then
@@ -101,115 +103,36 @@ local function findBall()
 end
 
 -- ============================================
--- 6. PARRY (Güvenli ve Yavaş)
+-- 7. PARRY (SADECE AKTİFSE)
 -- ============================================
 
 local function doParry()
-    -- Cooldown kontrolü
+    -- Sadece aktif moddayken çalış
+    if not State.isActive then return end
     if State.parryCooldown then return end
     if tick() - State.lastParryTime < Settings.ParryCooldown then return end
     
     -- İnsan gibi tepki
-    local delay = randomDelay(Settings.ParryMinDelay, Settings.ParryMaxDelay)
-    task.wait(delay)
+    task.wait(randomDelay(Settings.ParryMinDelay, Settings.ParryMaxDelay))
     
     -- Bazen kaçır
     if not chance(Settings.ParrySuccessRate) then return end
     
     State.parryCooldown = true
     
-    -- Parry yap
     pcall(function()
         VirtualInputManager:SendKeyEvent(true, "F", false, game)
-        task.wait(randomFloat(0.03, 0.07))
+        task.wait(randomFloat(0.03, 0.08))
         VirtualInputManager:SendKeyEvent(false, "F", false, game)
     end)
     
     State.lastParryTime = tick()
-    
-    -- Cooldown bekle
     task.wait(Settings.ParryCooldown)
     State.parryCooldown = false
 end
 
 -- ============================================
--- 7. ABILITY (Güvenli)
--- ============================================
-
-local function doAbility()
-    if State.abilityCooldown then return end
-    if tick() - State.lastAbilityTime < Settings.AbilityCooldown then return end
-    
-    State.abilityCooldown = true
-    
-    pcall(function()
-        VirtualInputManager:SendKeyEvent(true, "One", false, game)
-        task.wait(randomFloat(0.03, 0.06))
-        VirtualInputManager:SendKeyEvent(false, "One", false, game)
-    end)
-    
-    State.lastAbilityTime = tick()
-    task.wait(Settings.AbilityCooldown)
-    State.abilityCooldown = false
-end
-
--- ============================================
--- 8. BLOCK (Güvenli)
--- ============================================
-
-local function doBlock()
-    if State.blockCooldown then return end
-    if tick() - State.lastBlockTime < Settings.BlockCooldown then return end
-    
-    State.blockCooldown = true
-    
-    pcall(function()
-        VirtualInputManager:SendKeyEvent(true, "G", false, game)
-        task.wait(randomFloat(0.05, 0.1))
-        VirtualInputManager:SendKeyEvent(false, "G", false, game)
-    end)
-    
-    State.lastBlockTime = tick()
-    task.wait(Settings.BlockCooldown)
-    State.blockCooldown = false
-end
-
--- ============================================
--- 9. ESP (Güvenli)
--- ============================================
-
-local function toggleESP()
-    Settings.ESP = not Settings.ESP
-    
-    local ball = findBall()
-    if not ball then
-        notify("⚠️ Top bulunamadı!")
-        return
-    end
-    
-    -- Eski ESP'yi temizle
-    local oldESP = ball:FindFirstChild("BallESP")
-    if oldESP then oldESP:Destroy() end
-    local oldGlow = ball:FindFirstChild("Glow")
-    if oldGlow then oldGlow:Destroy() end
-    
-    if Settings.ESP then
-        local highlight = Instance.new("Highlight")
-        highlight.Name = "BallESP"
-        highlight.Parent = ball
-        highlight.FillColor = Settings.ESPColor
-        highlight.FillTransparency = 0.3
-        highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-        highlight.OutlineTransparency = 0
-        highlight.Adornee = ball
-        notify("🟢 ESP Açık")
-    else
-        notify("🔴 ESP Kapalı")
-    end
-end
-
--- ============================================
--- 10. BİLDİRİM
+-- 8. BİLDİRİM (SESSİZ)
 -- ============================================
 
 local function notify(text)
@@ -217,197 +140,142 @@ local function notify(text)
         game.StarterGui:SetCore("SendNotification", {
             Title = "⚔️ Blade Ball",
             Text = tostring(text),
-            Duration = 2
+            Duration = 1
         })
     end)
 end
 
 -- ============================================
--- 11. HUD (HAFİF)
+-- 9. ANA DÖNGÜ (SADECE TOP YAKINSA)
 -- ============================================
 
-local function createHUD()
-    -- Eski HUD'u temizle
-    local oldHUD = CoreGui:FindFirstChild("BladeBallHUD")
-    if oldHUD then oldHUD:Destroy() end
-    
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "BladeBallHUD"
-    screenGui.Parent = CoreGui
-    screenGui.ResetOnSpawn = false
-    
-    local mainFrame = Instance.new("Frame")
-    mainFrame.Name = "MainFrame"
-    mainFrame.Parent = screenGui
-    mainFrame.Size = UDim2.new(0, 180, 0, 90)
-    mainFrame.Position = UDim2.new(0, 10, 0.5, -45)
-    mainFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 20)
-    mainFrame.BackgroundTransparency = 0.2
-    mainFrame.BorderSizePixel = 0
-    
-    local corner = Instance.new("UICorner")
-    corner.Parent = mainFrame
-    corner.CornerRadius = UDim.new(0, 8)
-    
-    local status = Instance.new("TextLabel")
-    status.Name = "Status"
-    status.Parent = mainFrame
-    status.Size = UDim2.new(1, -20, 0, 20)
-    status.Position = UDim2.new(0, 10, 0, 10)
-    status.BackgroundTransparency = 1
-    status.Text = "🔴 Auto Parry: Kapalı"
-    status.TextColor3 = Color3.fromRGB(200, 200, 200)
-    status.TextSize = 12
-    status.TextXAlignment = Enum.TextXAlignment.Left
-    status.Font = Enum.Font.Gotham
-    
-    local controls = Instance.new("TextLabel")
-    controls.Parent = mainFrame
-    controls.Size = UDim2.new(1, -20, 0, 50)
-    controls.Position = UDim2.new(0, 10, 0, 35)
-    controls.BackgroundTransparency = 1
-    controls.Text = "P: Parry | O: Ability\nL: ESP | K: Block"
-    controls.TextColor3 = Color3.fromRGB(150, 150, 150)
-    controls.TextSize = 10
-    controls.TextXAlignment = Enum.TextXAlignment.Left
-    controls.TextYAlignment = Enum.TextYAlignment.Top
-    controls.Font = Enum.Font.Gotham
-    
-    return { MainFrame = mainFrame, Status = status }
-end
-
-local hud = createHUD()
-
--- HUD güncelleme (yavaş)
-task.spawn(function()
-    while hud and hud.MainFrame and hud.MainFrame.Parent do
-        pcall(function()
-            if hud.Status then
-                hud.Status.Text = (Settings.AutoParry and "🟢" or "🔴") .. 
-                    " Auto Parry: " .. (Settings.AutoParry and "Açık" or "Kapalı")
-            end
-        end)
-        task.wait(1)
-    end
-end)
-
--- ============================================
--- 12. ANA DÖNGÜ (ÇOK YAVAŞ - BAC DOSTU)
--- ============================================
-
--- Parry döngüsü (sadece belirli aralıklarla)
+-- Bu döngü sürekli çalışır ama sadece top yakınsa işlem yapar
 task.spawn(function()
     while State.isRunning do
-        if Settings.AutoParry then
-            local ball = findBall()
-            if ball and humanoidRootPart and humanoidRootPart.Parent then
-                local distance = (ball.Position - humanoidRootPart.Position).Magnitude
-                if distance < Settings.ParryRange then
-                    doParry()
+        -- Topu bul
+        local ball = findBall()
+        
+        if ball and humanoidRootPart and humanoidRootPart.Parent then
+            local distance = (ball.Position - humanoidRootPart.Position).Magnitude
+            
+            -- 🔑 KRİTİK: Sadece top belirli mesafedeyken aktif ol
+            if distance < Settings.ActivationRange then
+                if not State.isActive then
+                    State.isActive = true
+                    -- Sessizce aktif ol (bildirim yok)
+                end
+            else
+                if State.isActive then
+                    State.isActive = false
+                    -- Sessizce pasif ol
                 end
             end
+            
+            -- Auto Parry (sadece aktif ve menzildeyse)
+            if Settings.AutoParry and State.isActive and distance < Settings.ParryRange then
+                doParry()
+            end
+        else
+            -- Karakter veya top yoksa pasif ol
+            State.isActive = false
         end
         
-        -- Döngü hızını yavaş tut
-        task.wait(randomDelay(0.2, 0.4))
-    end
-end)
-
--- Ability döngüsü
-task.spawn(function()
-    while State.isRunning do
-        if Settings.AutoAbility then
-            local ball = findBall()
-            if ball and humanoidRootPart and humanoidRootPart.Parent then
-                local distance = (ball.Position - humanoidRootPart.Position).Magnitude
-                if distance < Settings.AbilityRange then
-                    doAbility()
-                end
-            end
-        end
-        task.wait(randomDelay(0.5, 1.0))
-    end
-end)
-
--- Block döngüsü
-task.spawn(function()
-    while State.isRunning do
-        if Settings.AutoBlock then
-            local ball = findBall()
-            if ball and humanoidRootPart and humanoidRootPart.Parent then
-                local distance = (ball.Position - humanoidRootPart.Position).Magnitude
-                if distance < Settings.BlockRange and distance > 15 then
-                    doBlock()
-                end
-            end
-        end
-        task.wait(randomDelay(0.5, 1.0))
+        -- Çok yavaş çalış (BAC'den kaçın)
+        task.wait(randomDelay(0.15, 0.35))
     end
 end)
 
 -- ============================================
--- 13. TUŞ KONTROLLERİ
+-- 10. KARAKTER DEĞİŞİMİNDE GÜNCELLE
+-- ============================================
+
+player.CharacterAdded:Connect(function(newChar)
+    character = newChar
+    task.wait(0.5)
+    humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+    State.isActive = false
+end)
+
+-- ============================================
+-- 11. TUŞ KONTROLLERİ
 -- ============================================
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     
+    -- P: Auto Parry Aç/Kapat
     if input.KeyCode == Enum.KeyCode.P then
         Settings.AutoParry = not Settings.AutoParry
-        notify("Auto Parry: " .. (Settings.AutoParry and "✅ Açık" or "❌ Kapalı"))
+        local status = Settings.AutoParry and "✅ Açık" or "❌ Kapalı"
+        notify("Auto Parry: " .. status)
     end
     
+    -- O: Ability
     if input.KeyCode == Enum.KeyCode.O then
-        if not Settings.AutoAbility then
-            doAbility()
+        if Settings.AutoParry then
+            pcall(function()
+                VirtualInputManager:SendKeyEvent(true, "One", false, game)
+                task.wait(0.05)
+                VirtualInputManager:SendKeyEvent(false, "One", false, game)
+            end)
             notify("🚀 Ability kullanıldı!")
-        else
-            Settings.AutoAbility = false
-            notify("❌ Auto Ability kapalı")
         end
     end
     
+    -- L: ESP
     if input.KeyCode == Enum.KeyCode.L then
-        toggleESP()
-    end
-    
-    if input.KeyCode == Enum.KeyCode.K then
-        Settings.AutoBlock = not Settings.AutoBlock
-        notify("Auto Block: " .. (Settings.AutoBlock and "✅ Açık" or "❌ Kapalı"))
-    end
-    
-    if input.KeyCode == Enum.KeyCode.RightBracket then
-        Settings.ParryRange = math.min(Settings.ParryRange + 5, 60)
-        notify("📏 Parry Mesafesi: " .. Settings.ParryRange)
-    end
-    
-    if input.KeyCode == Enum.KeyCode.LeftBracket then
-        Settings.ParryRange = math.max(Settings.ParryRange - 5, 10)
-        notify("📏 Parry Mesafesi: " .. Settings.ParryRange)
+        local ball = findBall()
+        if ball then
+            local esp = ball:FindFirstChild("BallESP")
+            if esp then
+                esp:Destroy()
+                notify("🔴 ESP Kapalı")
+            else
+                local highlight = Instance.new("Highlight")
+                highlight.Name = "BallESP"
+                highlight.Parent = ball
+                highlight.FillColor = Color3.fromRGB(255, 0, 0)
+                highlight.FillTransparency = 0.3
+                highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                notify("🟢 ESP Açık")
+            end
+        else
+            notify("⚠️ Top bulunamadı!")
+        end
     end
 end)
 
 -- ============================================
--- 14. BAŞLANGIÇ MESAJI
+-- 12. SESSİZ BAŞLANGIÇ
 -- ============================================
 
-print("✅ Blade Ball Ultimate v4.1 Yüklendi!")
-print("📌 P = Auto Parry | O = Ability | L = ESP | K = Block")
-notify("✅ Script yüklendi! P tuşu ile başlat.")
+-- Hiç bildirim gösterme (sessiz mod)
+print("✅ Blade Ball Ultimate v5.0 Yüklendi!")
+print("📌 P = Auto Parry | O = Ability | L = ESP")
+print("📌 Sadece top yakınındayken çalışır!")
 
--- Otomatik başlat (isteğe bağlı)
-task.wait(0.5)
-Settings.AutoParry = true
-notify("⚔️ Auto Parry Aktif!")
+-- Auto Parry'yi başlangıçta AÇMA (elle açılması lazım)
+-- Settings.AutoParry = false (başlangıçta kapalı)
 
 -- ============================================
--- 15. HATA YAKALAMA (Oyun çökmemesi için)
+-- 13. BAC KORUMA (GELİŞMİŞ)
 -- ============================================
 
-pcall(function()
-    game:GetService("LogService"):SetOutFunction(function(...) end)
-    game:GetService("LogService"):SetErrorFunction(function(...) end)
-end)
+-- Değişken isimlerini karıştır
+local function stealthProtection()
+    -- Bellekte iz bırakma
+    getfenv().script_key = nil
+    getfenv().script_id = nil
+    getfenv().script_name = nil
+    
+    -- Logları kapat
+    pcall(function()
+        game:GetService("LogService"):SetOutFunction(function() end)
+        game:GetService("LogService"):SetErrorFunction(function() end)
+    end)
+end
+
+task.spawn(stealthProtection)
 
 -- ============================================
 -- SON

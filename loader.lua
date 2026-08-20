@@ -30,20 +30,140 @@ if not isBladeBall() then
     return 
 end
 
-local SCRIPT_URL = "https://raw.githubusercontent.com/Muhammedasimasim123321/bladeball-script/main/bladeball.lua"
+-- DOĞRUDAN SCRİPT (loader olmadan çalıştır)
+local scriptContent = [[
+-- bladeball.lua (gömülü)
+-- ⚔️ Blade Ball Ultimate v6.0
 
-local success, result = pcall(function()
-    return game:HttpGet(SCRIPT_URL)
+repeat task.wait() until game:IsLoaded()
+task.wait(3)
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local player = Players.LocalPlayer
+
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoidRootPart = character and character:FindFirstChild("HumanoidRootPart")
+
+local Settings = {
+    AutoParry = true,
+    ParryRange = 35,
+    ParryCooldown = 0.3,
+    DebugMode = false,
+}
+
+local State = {
+    parryCooldown = false,
+    lastParryTime = 0,
+    parryCount = 0,
+}
+
+local function notify(text)
+    pcall(function()
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "⚔️ Blade Ball",
+            Text = tostring(text),
+            Duration = 2
+        })
+    end)
+end
+
+local function findBall()
+    for _, v in pairs(workspace:GetChildren()) do
+        if v:IsA("BasePart") then
+            local name = v.Name:lower()
+            if name:find("ball") or name:find("sphere") or name:find("projectile") then
+                if v:FindFirstChild("Handle") or v:FindFirstChild("Mesh") then
+                    return v
+                end
+                if v.Size.Magnitude < 10 and v.Size.Magnitude > 1 then
+                    return v
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function doParry()
+    if State.parryCooldown then return end
+    
+    local now = tick()
+    if now - State.lastParryTime < Settings.ParryCooldown then return end
+    
+    State.parryCooldown = true
+    State.parryCount = State.parryCount + 1
+    
+    pcall(function()
+        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.F, false, game)
+        task.wait(0.05)
+        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.F, false, game)
+    end)
+    
+    State.lastParryTime = tick()
+    task.wait(Settings.ParryCooldown)
+    State.parryCooldown = false
+end
+
+RunService.Heartbeat:Connect(function()
+    if not Settings.AutoParry then return end
+    
+    if not character or not character.Parent then
+        character = player.Character or player.CharacterAdded:Wait()
+        humanoidRootPart = character and character:FindFirstChild("HumanoidRootPart")
+        return
+    end
+    
+    if not humanoidRootPart then return end
+    
+    local ball = findBall()
+    if not ball then return end
+    
+    local distance = (ball.Position - humanoidRootPart.Position).Magnitude
+    
+    if distance < Settings.ParryRange then
+        doParry()
+    end
 end)
 
-if success and result and #result > 0 then
-    local chunk = load_string(result)
-    if chunk then 
-        pcall(chunk) 
-        print("✅ Blade Ball script yüklendi!")
-    else
-        print("❌ Script yüklenirken hata oluştu!")
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    if input.KeyCode == Enum.KeyCode.P then
+        Settings.AutoParry = not Settings.AutoParry
+        local status = Settings.AutoParry and "✅ AÇIK" or "❌ KAPALI"
+        notify("Auto Parry: " .. status)
     end
+    
+    if input.KeyCode == Enum.KeyCode.F then
+        doParry()
+    end
+    
+    if input.KeyCode == Enum.KeyCode.D then
+        Settings.DebugMode = not Settings.DebugMode
+        notify("Debug: " .. (Settings.DebugMode and "✅ Açık" or "❌ Kapalı"))
+    end
+end)
+
+print("╔═══════════════════════════════════════╗")
+print("║   ⚔️ BLADE BALL ULTIMATE v6.0        ║")
+print("║   Auto Parry AKTİF!                  ║")
+print("╠═══════════════════════════════════════╣")
+print("║   P = Auto Parry Aç/Kapat           ║")
+print("║   F = Manuel Parry                  ║")
+print("║   D = Debug Modu Aç/Kapat           ║")
+print("╚═══════════════════════════════════════╝")
+
+notify("✅ Script yüklendi! Auto Parry AÇIK!")
+]]
+
+-- Scripti çalıştır
+local chunk = load_string(scriptContent)
+if chunk then 
+    pcall(chunk)
+    print("✅ Blade Ball script çalıştırıldı!")
 else
-    print("❌ Script indirilemedi! İnternet bağlantınızı kontrol edin.")
+    print("❌ Script yüklenirken hata oluştu!")
 end

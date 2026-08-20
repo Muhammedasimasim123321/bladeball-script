@@ -31,10 +31,10 @@ end
 
 local Settings = {
     AutoParry = true,
-    ParryRange = 30,             -- Parry mesafesi (studs)
-    ParryTiming = 0.26,          -- Hızlı toplar için zaman eşiği (sn)
-    ParryCooldown = 0.20,        -- Vuruşlar arası minimum süre
-    CheckTarget = true,          -- Sadece bize gelen toplarda parry at
+    ParryRange = 33,             -- En ideal vuruş mesafesi (33 studs)
+    ParryTiming = 0.27,          -- Yüksek hızlı toplarda tam zamanında vuruş eşiği (0.27s)
+    ParryCooldown = 0.18,        -- Hızlı geri dönüşler için optimize edilmiş bekleme süresi
+    CheckTarget = true,          -- Sadece sana gelen toplarda parry atarak boşa düşmeyi önler
     
     -- Visuals / ESP
     BallESP = true,

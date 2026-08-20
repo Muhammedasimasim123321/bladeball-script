@@ -1,6 +1,6 @@
 -- bladeball.lua
--- ⚔️ BLADE BALL - PURE STEALTH AUTO PARRY (SIFIR KICK, %100 ÖLÜMSÜZLÜK)
--- 🛡️ Anti-Cheat Taramalarına Karşı Sıfır GUI & Sıfır Obje (100% Undetected)
+-- ⚔️ BLADE BALL - INSTANT MILLISECOND AUTO SPAM PARRY
+-- ⚡ Top sana yöneldiğinde veya menzile girdiğinde 0 gecikmeyle milisaniyelik aralıksız vuruş yapar.
 
 repeat task.wait() until game:IsLoaded()
 
@@ -11,21 +11,18 @@ local VirtualInputManager = game:GetService("VirtualInputManager")
 local StarterGui = game:GetService("StarterGui")
 
 local player = Players.LocalPlayer
-local getTime = os.clock or tick
+local renderSignal = RunService.RenderStepped or RunService.Heartbeat
 
 -- ====================================================================
--- 1. AYARLAR (EN İDEAL OTOMATİK AYARLAR)
+-- 1. AYARLAR (MİLİSANİYELİK SPAM VE ALAN AYARLARI)
 -- ====================================================================
 
 local AutoParryEnabled = true
-local ParryRange = 33          -- Standart vuruş mesafesi (studs)
-local ParryTiming = 0.28       -- Hızlı toplar için varış süresi (sn)
-local ParryCooldown = 0.18     -- Minimum vuruş bekleme süresi
-local lastParryTime = 0
-local parryCount = 0
+local ParryZone = 36           -- Savunma Alanı Mesafesi (Studs) - Bu alana girdiği an seri vuruş başlar
+local MaxTimeToHit = 0.35      -- Hızlı toplar için algılama süresi (sn)
 
 -- ====================================================================
--- 2. SES VE BİLDİRİM
+-- 2. BİLDİRİM
 -- ====================================================================
 
 local function notify(title, text)
@@ -39,7 +36,7 @@ local function notify(title, text)
 end
 
 -- ====================================================================
--- 3. KARAKTER TAKİBİ
+-- 3. KARAKTER YÖNETİMİ
 -- ====================================================================
 
 local character = player.Character
@@ -56,10 +53,10 @@ end
 player.CharacterAdded:Connect(onCharacterAdded)
 
 -- ====================================================================
--- 4. TOP VE HEDEF BULUCU (SAF MATEMATİK & SIFIR OBJE ENJEKSİYONU)
+-- 4. TOP VE HEDEF TESPİTİ
 -- ====================================================================
 
-local function getActiveBall()
+local function getTargetBall()
     local balls = workspace:FindFirstChild("Balls") or workspace
     local myChar = character
     if not myChar or not humanoidRootPart then return nil, false, 0 end
@@ -67,9 +64,9 @@ local function getActiveBall()
     local myName = player.Name
     local charName = myChar.Name
     
-    local bestBall = nil
+    local closestBall = nil
     local minDistance = math.huge
-    local isTargeted = false
+    local isTargetedToMe = false
     
     for _, obj in ipairs(balls:GetChildren()) do
         local part = obj:IsA("BasePart") and obj or obj:FindFirstChildWhichIsA("BasePart")
@@ -83,99 +80,85 @@ local function getActiveBall()
                 if targetAttr then
                     targeted = (targetAttr == myName or targetAttr == charName)
                 else
-                    -- Top bize mi yöneliyor kontrolü
                     local vel = part.AssemblyLinearVelocity or part.Velocity or Vector3.new(0, 0, 0)
                     local dir = (humanoidRootPart.Position - part.Position)
                     if dir.Magnitude > 0 and vel.Magnitude > 0 then
-                        targeted = (vel.Unit:Dot(dir.Unit) > 0.30)
+                        targeted = (vel.Unit:Dot(dir.Unit) > 0.25)
                     end
                 end
                 
                 if dist < minDistance then
                     minDistance = dist
-                    bestBall = part
-                    isTargeted = targeted
+                    closestBall = part
+                    isTargetedToMe = targeted
                 end
             end
         end
     end
     
-    return bestBall, isTargeted, minDistance
+    return closestBall, isTargetedToMe, minDistance
 end
 
 -- ====================================================================
--- 5. SAF VE DOĞAL PARRY (F TUŞU)
+-- 5. MİLİSANİYELİK ANINDA VURUŞ (INSTANT PARRY)
 -- ====================================================================
 
-local function doParry()
-    local now = getTime()
-    if (now - lastParryTime) < ParryCooldown then
-        return
-    end
-    
-    lastParryTime = now
-    parryCount = parryCount + 1
-    
-    task.spawn(function()
-        pcall(function()
-            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.F, false, game)
-            task.wait(0.02)
-            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.F, false, game)
-        end)
-    end)
+local function instantParry()
+    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.F, false, game)
+    task.wait(0.01)
+    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.F, false, game)
 end
 
 -- ====================================================================
--- 6. ANA KORUMA DÖNGÜSÜ (HEARTBEAT)
+-- 6. ÇEKİRDEK İŞLEMCİ DÖNGÜSÜ (RENDERSTEPPED - 0 MS GECİKME)
 -- ====================================================================
 
-RunService.Heartbeat:Connect(function()
+renderSignal:Connect(function()
     if not AutoParryEnabled then return end
     if not character or not humanoidRootPart or not humanoidRootPart.Parent then return end
     
-    local ball, isTargeted, distance = getActiveBall()
-    if not ball or not isTargeted then return end
+    local ball, isTargeted, distance = getTargetBall()
+    if not ball then return end
     
-    local velocity = ball.AssemblyLinearVelocity or ball.Velocity or Vector3.new(0, 0, 0)
-    local speed = velocity.Magnitude
-    local timeToHit = speed > 5 and (distance / speed) or math.huge
-    
-    -- Vuruş Koşulu:
-    -- 1. Hızlı top varış süresi eşiğindeyse (timeToHit <= ParryTiming)
-    -- 2. Top vuruş mesafesindeyse (distance <= ParryRange)
-    if timeToHit <= ParryTiming or distance <= ParryRange then
-        doParry()
+    -- Eğer top bize hedeflenmişse veya bize doğru geliyorsa
+    if isTargeted then
+        local velocity = ball.AssemblyLinearVelocity or ball.Velocity or Vector3.new(0, 0, 0)
+        local speed = velocity.Magnitude
+        local timeToHit = speed > 5 and (distance / speed) or math.huge
+        
+        -- ALAN VE VARIRLIK KONTROLÜ:
+        -- Top senin alanındaysa (distance <= ParryZone) veya sana çarpmak üzereyse (timeToHit <= MaxTimeToHit)
+        -- Anında milisaniyelik tam gaz tıklar!
+        if distance <= ParryZone or timeToHit <= MaxTimeToHit then
+            task.spawn(instantParry)
+        end
     end
 end)
 
 -- ====================================================================
--- 7. KISAYOL TUŞLARI
+-- 7. KONTROLLER
 -- ====================================================================
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     
-    -- P Tuşu: Auto Parry Aç / Kapat
+    -- P Tuşu: Aç / Kapat
     if input.KeyCode == Enum.KeyCode.P then
         AutoParryEnabled = not AutoParryEnabled
-        local status = AutoParryEnabled and "✅ AÇIK (KORUMA DEVREDE)" or "❌ KAPALI"
+        local status = AutoParryEnabled and "✅ AÇIK (Milisaniyelik Spam)" or "❌ KAPALI"
         notify("⚔️ Auto Parry", status)
     end
     
     -- F Tuşu: Manuel Test Vuruşu
     if input.KeyCode == Enum.KeyCode.F then
-        doParry()
+        instantParry()
     end
 end)
 
--- ====================================================================
--- 8. BAŞLANGIÇ BİLGİLENDİRMESİ
--- ====================================================================
-
 print("")
 print("╔═════════════════════════════════════════════════════╗")
-print("║   🛡️ BLADE BALL STEALTH EDITION (100% SAFE)         ║")
-print("║   Sıfır Obje, Sıfır Kick & Kusursuz Auto Parry!     ║")
+print("║   ⚡ BLADE BALL INSTANT SPAM PARRY (0 MS)           ║")
+print("║   Top alanına girdiğinde milisaniyelik tıklar!     ║")
 print("╠═════════════════════════════════════════════════════╣")
 print("║   📌 KONTROLLER:                                    ║")
 print("║   [P] = Auto Parry Aç/Kapat                         ║")
@@ -183,4 +166,4 @@ print("║   [F] = Manuel Parry                                ║")
 print("╚═════════════════════════════════════════════════════╝")
 print("")
 
-notify("🛡️ Blade Ball Stealth", "✅ Koruma Açık! Top seni asla öldüremeyecek.")
+notify("⚡ Instant Parry", "✅ Milisaniyelik alan koruması aktif!")

@@ -1,5 +1,5 @@
 -- loader.lua
--- ⚔️ Blade Ball Ultimate Loader (v12.0 Clean)
+-- ⚔️ Blade Ball Ultimate Loader (v13.0)
 
 local load_string = loadstring or load
 
@@ -35,7 +35,5 @@ end)
 
 if success and result and #result > 0 then
     local chunk = load_string(result)
-    if chunk then
-        pcall(chunk)
-    end
+    if chunk then pcall(chunk) end
 end

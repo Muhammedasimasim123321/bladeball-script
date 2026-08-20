@@ -1,8 +1,15 @@
 -- bladeball.lua
--- ⚔️ BLADE BALL - 100% SILENT STEALTH AUTO PARRY (ZERO DETECTION / ZERO KICK)
--- 🛡️ Sıfır Print, Sıfır Bildirim, Sıfır Hook, %100 Sessiz ve Kusursuz Vuruş Motoru
+-- ⚔️ BLADE BALL - PURE ZERO-LOG STEALTH AUTO PARRY
+-- 🛡️ F9 Konsol Taramalarına Karşı %100 Görünmez & Tamamen Sessiz Çekirdek
 
 repeat task.wait() until game:IsLoaded()
+
+-- Tüm Konsol ve Log Çıktılarını Devre Dışı Bırak (LogService / F9 Taramasını %100 Engeller)
+local print = function() end
+local warn = function() end
+local error = function() end
+if rconsoleprint then rconsoleprint = function() end end
+if rconsolewarn then rconsolewarn = function() end end
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -23,9 +30,9 @@ local typeCheck = typeof or type
 
 local Config = {
     AutoParry = true,
-    ParryDistance = 40,          -- Vuruş menzili (Studs)
-    EmergencyDistance = 24,      -- Acil durum mesafesi (Studs)
-    ParryCooldown = 0.18,        -- Normal parry bekleme süresi
+    BaseRange = 40,              -- Vuruş menzili (Studs)
+    EmergencyDistance = 25,      -- Acil durum mesafesi
+    ParryCooldown = 0.18,        -- Normal vuruşlar arası bekleme
     ClashCooldown = 0.085,       -- Yakın temas clash bekleme süresi
 }
 
@@ -35,7 +42,7 @@ local State = {
 }
 
 -- ====================================================================
--- 2. DİNAMİK CANLI KARAKTER BULUCU (RESPAWN SAFE)
+-- 2. DİNAMİK CANLI KARAKTER BULUCU (RESPAWN KORUMASI)
 -- ====================================================================
 
 local function getMyRootPart()
@@ -48,7 +55,7 @@ local function getMyRootPart()
 end
 
 -- ====================================================================
--- 3. HEDEF VE TEHDİT KONTROLÜ
+-- 3. EVRENSEL HEDEF VE TOP BULUCU
 -- ====================================================================
 
 local function isTargetMatch(targetVal)
@@ -103,7 +110,7 @@ local function findActiveBall(myPos)
                             local targetedToMe = isTargetMatch(targetAttr)
                             local hasOtherTarget = (targetAttr ~= nil and not targetedToMe)
                             
-                            -- Yaklaşma Açısı (Dot Product)
+                            -- Yaklaşma Hızı (Dot Product)
                             local dirToMe = (myPos - bPos)
                             local isMovingTowards = false
                             if dirToMe.Magnitude > 0 and vel.Magnitude > 0 then
@@ -111,13 +118,13 @@ local function findActiveBall(myPos)
                                 isMovingTowards = (dot > 0.05)
                             end
                             
-                            -- TEHDİT DEĞERLENDİRMESİ
+                            -- Tehdit Kontrolü
                             local threat = false
                             if targetedToMe then
                                 threat = true
-                            elseif not hasOtherTarget and isMovingTowards and dist <= Config.ParryDistance then
+                            elseif not hasOtherTarget and isMovingTowards and dist <= Config.BaseRange then
                                 threat = true
-                            elseif hasOtherTarget and isMovingTowards and dist <= 16 then
+                            elseif hasOtherTarget and isMovingTowards and dist <= 14 then
                                 threat = true
                             end
                             
@@ -138,23 +145,8 @@ local function findActiveBall(myPos)
 end
 
 -- ====================================================================
--- 4. SESSİZ VE DOĞAL PARRY MOTORU (BAC KORUMALI)
+-- 4. KESİN VE DOĞAL PARRY MOTORU
 -- ====================================================================
-
-local function sendParrySignal()
-    -- Roblox resmi VirtualInputManager (En güvenli ve tespit edilemez yöntem)
-    if VirtualInputManager then
-        pcall(function()
-            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.F, false, game)
-            task.wait(0.012)
-            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.F, false, game)
-        end)
-    elseif mouse1click then
-        pcall(function()
-            mouse1click()
-        end)
-    end
-end
 
 local function executeParry(isClash)
     local now = getTime()
@@ -167,11 +159,19 @@ local function executeParry(isClash)
     State.lastParryTime = now
     State.parryCount = State.parryCount + 1
     
-    task.spawn(sendParrySignal)
+    task.spawn(function()
+        pcall(function()
+            if VirtualInputManager then
+                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.F, false, game)
+                task.wait(0.012)
+                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.F, false, game)
+            end
+        end)
+    end)
 end
 
 -- ====================================================================
--- 5. ANA İŞLEMCİ DÖNGÜSÜ (RENDERSTEPPED - 0 MS GECİKME)
+-- 5. ANA DÖNGÜ (RENDERSTEPPED - 0 MS GECİKME)
 -- ====================================================================
 
 renderSignal:Connect(function()
@@ -199,17 +199,16 @@ renderSignal:Connect(function()
     local effectiveSpeed = math.max(approachSpeed, speed, 1)
     local timeToHit = distance / effectiveSpeed
     
-    -- A) YAKIN TEMAS / CLASH: 16 studs altındaysa anında vur
+    -- 1. Yakın Temas / Clash
     if distance <= 16 then
         executeParry(true)
         return
     end
     
-    -- B) HIZA GÖRE DİNAMİK VURUŞ EŞİĞİ (Whiff & Geç Kalma Korumalı)
-    local dynamicTargetTime = clamp(0.30 + (speed / 1100), 0.30, 0.46)
-    local dynamicMaxDistance = clamp(speed * dynamicTargetTime, 18, 50)
+    -- 2. Hıza Göre Dinamik Vuruş Eşiği
+    local dynamicTargetTime = clamp(0.30 + (speed / 1200), 0.30, 0.45)
+    local dynamicMaxDistance = clamp(speed * dynamicTargetTime, 18, 48)
     
-    -- Vuruş Koşulu: Varış süresi veya mesafe eşiğindeyse vur
     if timeToHit <= dynamicTargetTime or distance <= dynamicMaxDistance then
         executeParry(false)
     end

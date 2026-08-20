@@ -1,6 +1,6 @@
 -- bladeball.lua
--- ⚔️ BLADE BALL - ADVANCED AI AUTO-BOT (FULL TRACKING & PERFECT PARRY ENGINE)
--- 🤖 Akıllı Top Takibi, Otomatik Yüz Dönme, Whiff Koruması, Mesafe Koruma ve Kusursuz Zamanlama
+-- ⚔️ BLADE BALL - ADVANCED AI AUTO-BOT & HYPER MACRO CLASH COUNTER
+-- 🤖 Akıllı Top Takibi, Otomatik Yüz Dönme, Whiff Koruması & Yakın Mesafe Seri Vuruş (Macro Counter)
 
 repeat task.wait() until game:IsLoaded()
 
@@ -24,17 +24,24 @@ local BotSettings = {
     AutoLookAtBall = true,       -- Topa otomatik yüzünü dön (Hitbox avantajı)
     AutoSpacing = false,         -- Otomatik mesafe koruma (Geriye/Güvenli alana çekilme)
     
-    -- Zamanlama ve Mesafe Parametreleri
+    -- Standart Zamanlama Parametreleri
     BaseParryDistance = 32,      -- Standart vuruş menzili
-    ClashDistance = 14,          -- Yakın temas clash menzili
+    ClashDistance = 16,          -- Yakın temas clash menzili
     ParryWindow = 0.30,          -- Vuruş penceresi (Blade Ball parry aktif süresi)
     
     ParryCooldown = 0.22,        -- Normal parry bekleme süresi (Erken basıp kilitlenmeyi önler)
-    ClashCooldown = 0.08,        -- Clash sırasında hızlı spam süresi
+    
+    -- ⚡ HİPER MACRO CLASH (Yakın Mesafe Seri Vuruş Sayacı)
+    MacroCounterEnabled = true,  -- Rakip makro açtığında karşı makro modu
+    HyperClashCooldown = 0.025,  -- 2+ yakın vuruşta devreye giren ultra hızlı tıklama (40+ cps)
+    ClashChainTimeout = 1.4,     -- Seri vuruşların geçerlilik süresi (sn)
 }
 
 local BotState = {
     lastParryTime = -999,
+    lastCloseParryTime = -999,
+    consecutiveCloseParries = 0, -- Yakın mesafede ardışık vuruş sayısı
+    isHyperClash = false,
     parryCount = 0,
     isTarget = false,
     currentBall = nil,
@@ -126,12 +133,18 @@ local function getActiveBall()
 end
 
 -- ====================================================================
--- 5. KUSURSUZ PARRY TETİKLEME MOTORU (WHIFF KORUMALI)
+-- 5. KUSURSUZ PARRY & HİPER MACRO TETİKLEYİCİ
 -- ====================================================================
 
-local function performParry(isClash)
+local function performParry(isHyper, isClash)
     local now = getTime()
-    local cd = isClash and BotSettings.ClashCooldown or BotSettings.ParryCooldown
+    local cd = BotSettings.ParryCooldown
+    
+    if isHyper then
+        cd = BotSettings.HyperClashCooldown
+    elseif isClash then
+        cd = 0.08
+    end
     
     if (now - BotState.lastParryTime) < cd then
         return
@@ -140,10 +153,20 @@ local function performParry(isClash)
     BotState.lastParryTime = now
     BotState.parryCount = BotState.parryCount + 1
     
+    -- Yakın mesafe zincir takibi (Clash Chain Counter)
+    if BotState.distance <= BotSettings.ClashDistance then
+        if (now - BotState.lastCloseParryTime) <= BotSettings.ClashChainTimeout then
+            BotState.consecutiveCloseParries = BotState.consecutiveCloseParries + 1
+        else
+            BotState.consecutiveCloseParries = 1
+        end
+        BotState.lastCloseParryTime = now
+    end
+    
     task.spawn(function()
         pcall(function()
             VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.F, false, game)
-            task.wait(0.015)
+            task.wait(0.01)
             VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.F, false, game)
         end)
     end)
@@ -156,9 +179,12 @@ end
 renderSignal:Connect(function()
     if not character or not humanoidRootPart or not humanoidRootPart.Parent then return end
     
+    local now = getTime()
     local ball, isTargeted, distance, velocity = getActiveBall()
     if not ball then 
         BotState.isTarget = false
+        BotState.consecutiveCloseParries = 0
+        BotState.isHyperClash = false
         return 
     end
     
@@ -183,6 +209,12 @@ renderSignal:Connect(function()
     BotState.distance = distance
     BotState.timeToHit = timeToHit
     
+    -- Yakın mesafe zinciri zaman aşımı kontrolü
+    if (now - BotState.lastCloseParryTime) > BotSettings.ClashChainTimeout or distance > (BotSettings.ClashDistance + 6) then
+        BotState.consecutiveCloseParries = 0
+        BotState.isHyperClash = false
+    end
+    
     -- 1. OTOMATİK TOPA YÜZÜNÜ DÖNME (Auto-Aim / Hitbox Genişletme)
     if BotSettings.AutoLookAtBall and isTargeted and distance <= 50 then
         pcall(function()
@@ -206,13 +238,21 @@ renderSignal:Connect(function()
     -- 3. KUSURSUZ VE HATASIZ PARRY KARAR MOTORU
     if not BotSettings.AutoParry or not isTargeted then return end
     
-    -- A) CLASH / DİP DİBE SAVAŞ: Mesafe çok yakınsa hızlı vur
-    if distance <= BotSettings.ClashDistance then
-        performParry(true)
+    -- A) ⚡ HİPER MACRO CLASH MODU:
+    -- Yakın mesafede top hızlıca 2. veya daha fazla kez geri döndüyse acayip hızlı spam tıklar!
+    if BotSettings.MacroCounterEnabled and distance <= (BotSettings.ClashDistance + 4) and BotState.consecutiveCloseParries >= 2 then
+        BotState.isHyperClash = true
+        performParry(true, true)
         return
     end
     
-    -- B) HIZA GÖRE DİNAMİK VURUŞ EŞİĞİ (Parry Window Calculation)
+    -- B) STANDART YAKIN TEMAS / CLASH: Mesafe yakınsa hızlı vur
+    if distance <= BotSettings.ClashDistance then
+        performParry(false, true)
+        return
+    end
+    
+    -- C) HIZA GÖRE DİNAMİK VURUŞ EŞİĞİ (Normal Whiff Korumalı Zamanlama)
     local dynamicTiming = BotSettings.ParryWindow
     if speed > 100 then
         dynamicTiming = clamp(0.28 + (speed / 1200), 0.28, 0.42)
@@ -222,7 +262,7 @@ renderSignal:Connect(function()
     
     -- Vuruş Koşulu: Top tam kılıcın parry penceresine girdiğinde vurur
     if timeToHit <= dynamicTiming or distance <= BotSettings.BaseParryDistance then
-        performParry(false)
+        performParry(false, false)
     end
 end)
 
@@ -256,7 +296,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     
     -- F Tuşu: Manuel Test Vuruşu
     if input.KeyCode == Enum.KeyCode.F then
-        performParry(false)
+        performParry(false, false)
     end
 end)
 
@@ -266,8 +306,8 @@ end)
 
 print("")
 print("╔═════════════════════════════════════════════════════╗")
-print("║   🤖 BLADE BALL AI AUTO-BOT (FULL TRACKING)        ║")
-print("║   Akıllı Top Takibi & Kusursuz Parry Aktif!         ║")
+print("║   🤖 BLADE BALL AI BOT + HYPER MACRO COUNTER       ║")
+print("║   Yakın Mesafe Seri Vuruş & Auto-Aim Devrede!       ║")
 print("╠═════════════════════════════════════════════════════╣")
 print("║   📌 KONTROLLER:                                    ║")
 print("║   [P] = Auto Parry Aç/Kapat                         ║")
@@ -277,4 +317,4 @@ print("║   [F] = Manuel Parry                                ║")
 print("╚═════════════════════════════════════════════════════╝")
 print("")
 
-notify("🤖 Blade Ball Bot", "✅ AI Takip & Kusursuz Parry Devrede!")
+notify("⚡ Macro Counter", "✅ Yakın mesafe hiper vuruş modu aktif!")

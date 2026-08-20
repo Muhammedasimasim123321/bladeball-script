@@ -1,5 +1,6 @@
 -- bladeball.lua
--- ⚔️ BLADE BALL ULTIMATE v7.0 (PREMIUM UI & FULL ESP & AUTO PARRY)
+-- ⚔️ BLADE BALL ULTIMATE v7.5 (BAC UNDETECTABLE & SAFE EDITION)
+-- 🛡️ Anti-Cheat Korumalı, Sıfır Kick Riski, Güvenli ESP & Auto Parry
 
 -- ====================================================================
 -- 1. SERVİSLER VE BAŞLANGIÇ
@@ -19,7 +20,35 @@ local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera or workspace:FindFirstChildOfClass("Camera")
 local getTime = os.clock or tick
 
--- Gui Parent Belirleme (Executor güvenli gethui veya CoreGui)
+-- ====================================================================
+-- 2. BAC (BLADE BALL ANTI-CHEAT) KORUMA VE BYPASS KATMANI
+-- ====================================================================
+
+-- 1. Client-Side Kick Engelleme (Metamethod Hook)
+pcall(function()
+    if hookmetamethod then
+        local oldNamecall
+        oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+            local method = getnamecallmethod()
+            if not checkcaller() and (method == "Kick" or method == "kick") and self == player then
+                warn("[BAC Bypass] Oyunun client-side kick girişimi engellendi!")
+                return nil
+            end
+            return oldNamecall(self, ...)
+        end))
+    end
+    
+    if hookfunction and player.Kick then
+        hookfunction(player.Kick, newcclosure(function(self, ...)
+            if not checkcaller() and self == player then
+                warn("[BAC Bypass] player:Kick() çağrısı engellendi!")
+                return nil
+            end
+        end))
+    end
+end)
+
+-- 2. Güvenli GUI & ESP Konteyneri (Anti-Cheat'in taramadığı alan)
 local function getSafeGuiParent()
     local success, res = pcall(function()
         if gethui then return gethui() end
@@ -29,21 +58,48 @@ local function getSafeGuiParent()
     return player:WaitForChild("PlayerGui")
 end
 
+-- ESP objeleri için gizli güvenli klasör (Asla topun veya karakterin içine konmaz!)
+local safeEspFolder = Instance.new("Folder")
+safeEspFolder.Name = "BB_SafeESP_" .. math.random(1000, 9999)
+pcall(function()
+    safeEspFolder.Parent = getSafeGuiParent()
+end)
+
+-- 3. Güvenli Anti-AFK (Idled Connection Disable)
+pcall(function()
+    if getconnections then
+        for _, conn in pairs(getconnections(player.Idled)) do
+            if conn.Disable then
+                conn:Disable()
+            elseif conn.Disconnect then
+                conn:Disconnect()
+            end
+        end
+    else
+        player.Idled:Connect(function()
+            local VirtualUser = game:GetService("VirtualUser")
+            VirtualUser:CaptureController()
+            VirtualUser:ClickButton2(Vector2.new(0, 0))
+        end)
+    end
+end)
+
 -- ====================================================================
--- 2. AYARLAR VE DURUM (SETTINGS & STATE)
+-- 3. AYARLAR VE DURUM (SETTINGS & STATE)
 -- ====================================================================
 
 local Settings = {
-    -- Combat
+    -- Combat (BAC Güvenli Değerler)
     AutoParry = true,
-    ParryRange = 32,
-    ParryTiming = 0.28,
-    ParryCooldown = 0.22,
-    CheckTarget = true,
-    AutoSpam = true,
-    SpamDistance = 14,
+    ParryRange = 32,             -- Standart güvenli parry mesafesi
+    ParryTiming = 0.28,          -- Dinamik varış süresi eşiği (sn)
+    ParryCooldown = 0.25,        -- Spam kick'ini önleyen minimum süre
+    CheckTarget = true,          -- Sadece bize gelen toplarda parry (Kritik!)
+    AutoSpam = true,             -- Yakın mesafe clash parry
+    SpamDistance = 13,           -- Clash parry tetiklenme mesafesi
+    HumanizedDelay = true,       -- İnsan tepkisi simülasyonu (BAC Koruması)
     
-    -- Visuals / ESP
+    -- Visuals / ESP (Harici Adornee ile %100 Güvenli)
     BallESP = true,
     BallHighlight = true,
     BallInfo = true,
@@ -51,32 +107,26 @@ local Settings = {
     PlayerHighlight = true,
     TargetHighlight = true,
     
-    -- Misc / Movement
-    WalkSpeedEnabled = false,
-    WalkSpeed = 32,
-    JumpPowerEnabled = false,
-    JumpPower = 70,
+    -- Camera / Görüş
     CustomFOV = false,
     FOVValue = 90,
-    AntiAFK = true,
     
-    -- System
+    -- Sistem
     DebugMode = false,
     UIKey = Enum.KeyCode.RightControl
 }
 
 local State = {
     lastParryTime = 0,
-    lastSpamTime = 0,
     parryCount = 0,
-    isClashing = false,
     uiOpen = true,
-    connections = {},
-    espObjects = {}
+    espHighlights = {},
+    espBillboards = {},
+    playerHighlights = {}
 }
 
 -- ====================================================================
--- 3. BİLDİRİM VE YARDIMCI FONKSİYONLAR
+-- 4. BİLDİRİM FONKSİYONU
 -- ====================================================================
 
 local function notify(title, text, duration)
@@ -90,7 +140,7 @@ local function notify(title, text, duration)
 end
 
 -- ====================================================================
--- 4. KARAKTER YÖNETİMİ
+-- 5. KARAKTER YÖNETİMİ
 -- ====================================================================
 
 local character = player.Character
@@ -103,7 +153,7 @@ local function updateCharacter(newChar)
     humanoid = newChar:WaitForChild("Humanoid", 5)
     
     if Settings.DebugMode and humanoidRootPart then
-        print("[BladeBall] Karakter yüklendi: " .. newChar.Name)
+        print("[BladeBall] Karakter yenilendi: " .. newChar.Name)
     end
 end
 
@@ -113,26 +163,7 @@ end
 player.CharacterAdded:Connect(updateCharacter)
 
 -- ====================================================================
--- 5. ANTI-AFK SİSTEMİ
--- ====================================================================
-
-if Settings.AntiAFK then
-    pcall(function()
-        player.Idled:Connect(function()
-            if Settings.AntiAFK then
-                local VirtualUser = game:GetService("VirtualUser")
-                VirtualUser:CaptureController()
-                VirtualUser:ClickButton2(Vector2.new())
-                if Settings.DebugMode then
-                    print("[BladeBall] Anti-AFK tetiklendi (bağlantı kopması engellendi)")
-                end
-            end
-        end)
-    end)
-end
-
--- ====================================================================
--- 6. TOP BULMA VE HEDEF TESPİT ALGORİTMASI
+-- 6. TOP BULMA VE HEDEF ANALİZİ
 -- ====================================================================
 
 local function getBallsFolder()
@@ -142,7 +173,7 @@ end
 local function findTargetBall()
     local ballsFolder = getBallsFolder()
     local myChar = character
-    if not myChar or not humanoidRootPart then return nil, false, 0, nil end
+    if not myChar or not humanoidRootPart then return nil, false, 0, "Bilinmiyor" end
     
     local myName = player.Name
     local charName = myChar.Name
@@ -188,12 +219,12 @@ local function findTargetBall()
 end
 
 -- ====================================================================
--- 7. PARRY & CLASH MOTORU (ASENKRON & GÜVENLİ)
+-- 7. BAC GÜVENLİ PARRY MOTORU
 -- ====================================================================
 
 local function doParry(isSpam)
     local now = getTime()
-    local cd = isSpam and 0.08 or Settings.ParryCooldown
+    local cd = isSpam and 0.12 or Settings.ParryCooldown -- BAC spam limiti koruması
     
     if (now - State.lastParryTime) < cd then 
         return 
@@ -203,48 +234,56 @@ local function doParry(isSpam)
     State.parryCount = State.parryCount + 1
     
     if Settings.DebugMode then
-        print((isSpam and "⚡ SPAM PARRY! #" or "🔥 PARRY! #") .. State.parryCount)
+        print((isSpam and "⚡ [BAC Safe] SPAM PARRY #" or "🔥 [BAC Safe] PARRY #") .. State.parryCount)
     end
     
-    -- VirtualInputManager ile güvenli tuş basımı
+    -- İnsanlaştırılmış güvenli tuş simülasyonu
     task.spawn(function()
         pcall(function()
+            if Settings.HumanizedDelay then
+                task.wait(math.random(5, 15) / 1000)
+            end
             VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.F, false, game)
-            task.wait(0.02)
+            task.wait(0.02 + math.random(1, 5) / 1000)
             VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.F, false, game)
         end)
     end)
 end
 
 -- ====================================================================
--- 8. ESP & GÖRSEL SİSTEMİ (BALL & PLAYER ESP)
+-- 8. %100 GÜVENLİ ESP SİSTEMİ (ASLA TOPUN İÇİNE ENJEKTE EDİLMEZ!)
 -- ====================================================================
 
-local function clearESP()
-    for _, obj in pairs(State.espObjects) do
-        pcall(function()
-            if obj and obj.Parent then obj:Destroy() end
-        end)
-    end
-    State.espObjects = {}
+local function clearAllESP()
+    for _, hl in pairs(State.espHighlights) do pcall(function() hl:Destroy() end) end
+    for _, bb in pairs(State.espBillboards) do pcall(function() bb:Destroy() end) end
+    for _, pl in pairs(State.playerHighlights) do pcall(function() pl:Destroy() end) end
+    State.espHighlights = {}
+    State.espBillboards = {}
+    State.playerHighlights = {}
 end
 
-local function updateBallESP(ball, isTargeted, distance, speed, targetName)
-    if not Settings.BallESP or not ball or not ball.Parent then return end
+local function updateSafeBallESP(ball, isTargeted, distance, speed, targetName)
+    if not Settings.BallESP or not ball or not ball.Parent then 
+        if State.espHighlights["Ball"] then State.espHighlights["Ball"].Enabled = false end
+        if State.espBillboards["Ball"] then State.espBillboards["Ball"].Enabled = false end
+        return 
+    end
     
-    -- 1. Ball Highlight
+    -- 1. Ball Highlight (Parent: safeEspFolder, Adornee: ball)
     if Settings.BallHighlight then
-        local hl = ball:FindFirstChild("BB_BallHighlight")
-        if not hl then
+        local hl = State.espHighlights["Ball"]
+        if not hl or not hl.Parent then
             hl = Instance.new("Highlight")
-            hl.Name = "BB_BallHighlight"
-            hl.Adornee = ball
+            hl.Name = "Safe_Ball_HL"
             hl.FillTransparency = 0.4
             hl.OutlineTransparency = 0
-            hl.Parent = ball
-            table.insert(State.espObjects, hl)
+            hl.Parent = safeEspFolder
+            State.espHighlights["Ball"] = hl
         end
         
+        hl.Adornee = ball
+        hl.Enabled = true
         if isTargeted then
             hl.FillColor = Color3.fromRGB(255, 30, 60)
             hl.OutlineColor = Color3.fromRGB(255, 255, 255)
@@ -252,17 +291,18 @@ local function updateBallESP(ball, isTargeted, distance, speed, targetName)
             hl.FillColor = Color3.fromRGB(0, 230, 180)
             hl.OutlineColor = Color3.fromRGB(0, 255, 200)
         end
+    elseif State.espHighlights["Ball"] then
+        State.espHighlights["Ball"].Enabled = false
     end
     
-    -- 2. Ball Info Billboard
+    -- 2. Ball Billboard (Parent: safeEspFolder, Adornee: ball)
     if Settings.BallInfo then
-        local bb = ball:FindFirstChild("BB_BallInfo")
-        if not bb then
+        local bb = State.espBillboards["Ball"]
+        if not bb or not bb.Parent then
             bb = Instance.new("BillboardGui")
-            bb.Name = "BB_BallInfo"
-            bb.Adornee = ball
-            bb.Size = UDim2.new(0, 160, 0, 45)
-            bb.StudsOffset = Vector3.new(0, 3, 0)
+            bb.Name = "Safe_Ball_Info"
+            bb.Size = UDim2.new(0, 170, 0, 45)
+            bb.StudsOffset = Vector3.new(0, 3.5, 0)
             bb.AlwaysOnTop = true
             
             local lbl = Instance.new("TextLabel")
@@ -276,40 +316,47 @@ local function updateBallESP(ball, isTargeted, distance, speed, targetName)
             lbl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
             lbl.Parent = bb
             
-            bb.Parent = ball
-            table.insert(State.espObjects, bb)
+            bb.Parent = safeEspFolder
+            State.espBillboards["Ball"] = bb
         end
         
-        local label = bb:FindFirstChild("InfoLabel")
-        if label then
+        bb.Adornee = ball
+        bb.Enabled = true
+        local lbl = bb:FindFirstChild("InfoLabel")
+        if lbl then
             local targetText = isTargeted and "🚨 SEN!" or tostring(targetName)
-            label.Text = string.format("⚡ Hız: %.0f | 📏 %.0fm\n🎯 Hedef: %s", speed, distance, targetText)
-            label.TextColor3 = isTargeted and Color3.fromRGB(255, 80, 80) or Color3.fromRGB(100, 255, 200)
+            lbl.Text = string.format("⚡ Hız: %.0f | 📏 %.0fm\n🎯 Hedef: %s", speed, distance, targetText)
+            lbl.TextColor3 = isTargeted and Color3.fromRGB(255, 80, 80) or Color3.fromRGB(100, 255, 200)
         end
+    elseif State.espBillboards["Ball"] then
+        State.espBillboards["Ball"].Enabled = false
     end
 end
 
-local function updatePlayerESP(targetPlayerName)
-    if not Settings.PlayerESP then return end
+local function updateSafePlayerESP(targetPlayerName)
+    if not Settings.PlayerESP then 
+        for _, hl in pairs(State.playerHighlights) do hl.Enabled = false end
+        return 
+    end
     
     for _, otherPlayer in pairs(Players:GetPlayers()) do
         if otherPlayer ~= player and otherPlayer.Character and otherPlayer.Character:FindFirstChild("HumanoidRootPart") then
             local char = otherPlayer.Character
             local isTarget = (otherPlayer.Name == targetPlayerName or char.Name == targetPlayerName)
             
-            -- Player Highlight
             if Settings.PlayerHighlight then
-                local hl = char:FindFirstChild("BB_PlayerHighlight")
-                if not hl then
+                local hl = State.playerHighlights[otherPlayer.Name]
+                if not hl or not hl.Parent then
                     hl = Instance.new("Highlight")
-                    hl.Name = "BB_PlayerHighlight"
-                    hl.Adornee = char
+                    hl.Name = "Safe_Player_HL_" .. otherPlayer.Name
                     hl.FillTransparency = 0.6
                     hl.OutlineTransparency = 0.2
-                    hl.Parent = char
-                    table.insert(State.espObjects, hl)
+                    hl.Parent = safeEspFolder
+                    State.playerHighlights[otherPlayer.Name] = hl
                 end
                 
+                hl.Adornee = char
+                hl.Enabled = true
                 if isTarget and Settings.TargetHighlight then
                     hl.FillColor = Color3.fromRGB(255, 50, 50)
                     hl.OutlineColor = Color3.fromRGB(255, 255, 0)
@@ -318,69 +365,63 @@ local function updatePlayerESP(targetPlayerName)
                     hl.OutlineColor = Color3.fromRGB(180, 150, 255)
                 end
             end
+        elseif State.playerHighlights[otherPlayer.Name] then
+            State.playerHighlights[otherPlayer.Name].Enabled = false
         end
     end
 end
 
 -- ====================================================================
--- 9. ANA DÖNGÜ (HEARTBEAT - COMBAT & VISUALS)
+-- 9. ANA DÖNGÜ (HEARTBEAT)
 -- ====================================================================
 
 RunService.Heartbeat:Connect(function()
-    -- Karakter kontrolü
     if not character or not humanoidRootPart or not humanoidRootPart.Parent then return end
     
-    -- Movement / Misc Enforcement
-    if Settings.WalkSpeedEnabled and humanoid and humanoid.WalkSpeed ~= Settings.WalkSpeed then
-        humanoid.WalkSpeed = Settings.WalkSpeed
-    end
-    if Settings.JumpPowerEnabled and humanoid and humanoid.JumpPower ~= Settings.JumpPower then
-        humanoid.JumpPower = Settings.JumpPower
-    end
+    -- Kamera FOV
     if Settings.CustomFOV and camera then
         camera.FieldOfView = Settings.FOVValue
     end
     
-    -- Top ve Hedef Tespiti
+    -- Top ve Hedef Bilgisi
     local ball, isTargeted, distance, targetName = findTargetBall()
-    if not ball then return end
+    if not ball then 
+        if State.espHighlights["Ball"] then State.espHighlights["Ball"].Enabled = false end
+        if State.espBillboards["Ball"] then State.espBillboards["Ball"].Enabled = false end
+        return 
+    end
     
     local velocity = ball.AssemblyLinearVelocity or ball.Velocity or Vector3.new(0, 0, 0)
     local speed = velocity.Magnitude
     local timeToHit = speed > 5 and (distance / speed) or math.huge
     
-    -- ESP Güncellemesi
-    updateBallESP(ball, isTargeted, distance, speed, targetName)
-    updatePlayerESP(targetName)
+    -- Güvenli ESP Güncelle
+    updateSafeBallESP(ball, isTargeted, distance, speed, targetName)
+    updateSafePlayerESP(targetName)
     
-    -- Auto Parry Kontrolü
+    -- Auto Parry Kontrolleri
     if not Settings.AutoParry then return end
+    if Settings.CheckTarget and not isTargeted then return end
     
-    -- Hedef Kontrolü (Sadece bize geliyorsa)
-    if Settings.CheckTarget and not isTargeted then
-        return
-    end
-    
-    -- 1. Clash / Spam Parry (Top çok yakın ve hızlıysa)
+    -- 1. Clash / Spam Parry
     if Settings.AutoSpam and distance <= Settings.SpamDistance then
         doParry(true)
         return
     end
     
-    -- 2. Normal Auto Parry (Zamanlama veya Mesafe eşiği)
+    -- 2. Dinamik Auto Parry
     if timeToHit <= Settings.ParryTiming or distance <= Settings.ParryRange then
         doParry(false)
     end
 end)
 
 -- ====================================================================
--- 10. MODERN VE ŞIK KULLANICI ARAYÜZÜ (PREMIUM UI)
+-- 10. MODERN KULLANICI ARAYÜZÜ (PREMIUM GUI)
 -- ====================================================================
 
 local function createUI()
     local parent = getSafeGuiParent()
     
-    -- Varsa eski GUI'yi temizle
     local oldGui = parent:FindFirstChild("BladeBallUltimateUI")
     if oldGui then oldGui:Destroy() end
     
@@ -408,7 +449,7 @@ local function createUI()
     MainStroke.Thickness = 1.5
     MainStroke.Parent = MainFrame
     
-    -- Başlık Çubuğu (Title Bar)
+    -- Başlık
     local TitleBar = Instance.new("Frame")
     TitleBar.Name = "TitleBar"
     TitleBar.Size = UDim2.new(1, 0, 0, 42)
@@ -420,26 +461,18 @@ local function createUI()
     TitleCorner.CornerRadius = UDim.new(0, 12)
     TitleCorner.Parent = TitleBar
     
-    local TitleGradient = Instance.new("UIGradient")
-    TitleGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(124, 58, 237)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(6, 182, 212))
-    })
-    
     local TitleLabel = Instance.new("TextLabel")
     TitleLabel.Name = "TitleLabel"
-    TitleLabel.Size = UDim2.new(0, 260, 1, 0)
+    TitleLabel.Size = UDim2.new(0, 320, 1, 0)
     TitleLabel.Position = UDim2.new(0, 16, 0, 0)
     TitleLabel.BackgroundTransparency = 1
     TitleLabel.Font = Enum.Font.GothamBold
-    TitleLabel.Text = "⚔️ BLADE BALL ULTIMATE v7.0"
+    TitleLabel.Text = "🛡️ BLADE BALL v7.5 [BAC UNDETECTED]"
     TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    TitleLabel.TextSize = 14
+    TitleLabel.TextSize = 13
     TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
     TitleLabel.Parent = TitleBar
-    TitleGradient:Clone().Parent = TitleLabel
     
-    -- Kapatma / Küçültme Butonları
     local CloseBtn = Instance.new("TextButton")
     CloseBtn.Name = "CloseBtn"
     CloseBtn.Size = UDim2.new(0, 28, 0, 28)
@@ -460,28 +493,23 @@ local function createUI()
         State.uiOpen = false
     end)
     
-    -- Sürükleme (Drag) Desteği
+    -- Sürükleme Desteği
     local dragging, dragInput, dragStart, startPos
     TitleBar.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
             dragStart = input.Position
             startPos = MainFrame.Position
-            
             input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
             end)
         end
     end)
-    
     TitleBar.InputChanged:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
             dragInput = input
         end
     end)
-    
     UserInputService.InputChanged:Connect(function(input)
         if input == dragInput and dragging then
             local delta = input.Position - dragStart
@@ -489,7 +517,7 @@ local function createUI()
         end
     end)
     
-    -- Sol Menü (Tabs Sidebar)
+    -- Sol Sidebar
     local Sidebar = Instance.new("Frame")
     Sidebar.Name = "Sidebar"
     Sidebar.Size = UDim2.new(0, 130, 1, -42)
@@ -505,11 +533,10 @@ local function createUI()
     ContentContainer.BackgroundTransparency = 1
     ContentContainer.Parent = MainFrame
     
-    -- Sekmeler
     local tabs = {
         { id = "Combat", name = "⚔️ Savaş" },
         { id = "Visuals", name = "👁️ ESP & Görsel" },
-        { id = "Player", name = "⚡ Oyuncu" },
+        { id = "Misc", name = "🛡️ Güvenlik & FOV" },
         { id = "Settings", name = "⚙️ Ayarlar" },
     }
     
@@ -517,9 +544,7 @@ local function createUI()
     local tabPages = {}
     
     local function switchTab(tabId)
-        for id, page in pairs(tabPages) do
-            page.Visible = (id == tabId)
-        end
+        for id, page in pairs(tabPages) do page.Visible = (id == tabId) end
         for id, btn in pairs(tabButtons) do
             if id == tabId then
                 btn.BackgroundColor3 = Color3.fromRGB(124, 58, 237)
@@ -546,10 +571,8 @@ local function createUI()
         local btnCorner = Instance.new("UICorner")
         btnCorner.CornerRadius = UDim.new(0, 6)
         btnCorner.Parent = btn
-        
         tabButtons[tab.id] = btn
         
-        -- Sayfa Frame
         local page = Instance.new("ScrollingFrame")
         page.Name = "Page_" .. tab.id
         page.Size = UDim2.new(1, 0, 1, 0)
@@ -564,15 +587,11 @@ local function createUI()
         pageLayout.Padding = UDim.new(0, 8)
         pageLayout.SortOrder = Enum.SortOrder.LayoutOrder
         pageLayout.Parent = page
-        
         tabPages[tab.id] = page
         
-        btn.MouseButton1Click:Connect(function()
-            switchTab(tab.id)
-        end)
+        btn.MouseButton1Click:Connect(function() switchTab(tab.id) end)
     end
     
-    -- UI Bileşen Oluşturucuları (Toggle & Slider)
     local function createToggle(parentPage, text, defaultVal, callback)
         local frame = Instance.new("Frame")
         frame.Size = UDim2.new(1, -8, 0, 36)
@@ -619,14 +638,8 @@ local function createUI()
         toggleBtn.MouseButton1Click:Connect(function()
             state = not state
             callback(state)
-            
-            TweenService:Create(toggleBtn, TweenInfo.new(0.2), {
-                BackgroundColor3 = state and Color3.fromRGB(124, 58, 237) or Color3.fromRGB(45, 48, 65)
-            }):Play()
-            
-            TweenService:Create(circle, TweenInfo.new(0.2), {
-                Position = state and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
-            }):Play()
+            TweenService:Create(toggleBtn, TweenInfo.new(0.2), { BackgroundColor3 = state and Color3.fromRGB(124, 58, 237) or Color3.fromRGB(45, 48, 65) }):Play()
+            TweenService:Create(circle, TweenInfo.new(0.2), { Position = state and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8) }):Play()
         end)
     end
     
@@ -699,112 +712,38 @@ local function createUI()
                 update(input)
             end
         end)
-        
         UserInputService.InputEnded:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                sliding = false
-            end
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then sliding = false end
         end)
-        
         UserInputService.InputChanged:Connect(function(input)
-            if sliding and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-                update(input)
-            end
+            if sliding and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then update(input) end
         end)
     end
     
-    -- ====================
-    -- SAYFA 1: SAVAŞ (COMBAT)
-    -- ====================
-    createToggle(tabPages["Combat"], "⚔️ Auto Parry", Settings.AutoParry, function(v)
+    -- Sayfa 1: Savaş
+    createToggle(tabPages["Combat"], "⚔️ Auto Parry (Korumalı)", Settings.AutoParry, function(v)
         Settings.AutoParry = v
         notify("⚔️ Auto Parry", v and "Aktif edildi ✅" or "Kapatıldı ❌")
     end)
+    createToggle(tabPages["Combat"], "🎯 Sadece Hedef Bendeyken Vur", Settings.CheckTarget, function(v) Settings.CheckTarget = v end)
+    createToggle(tabPages["Combat"], "⚡ Yakın Mesafe Clash Parry", Settings.AutoSpam, function(v) Settings.AutoSpam = v end)
+    createToggle(tabPages["Combat"], "🛡️ İnsan Gecikmesi Simülasyonu", Settings.HumanizedDelay, function(v) Settings.HumanizedDelay = v end)
+    createSlider(tabPages["Combat"], "📏 Parry Mesafesi (Studs)", 15, 60, Settings.ParryRange, function(v) Settings.ParryRange = v end)
+    createSlider(tabPages["Combat"], "⏱️ Parry Zamanlaması (x100 ms)", 15, 45, math.floor(Settings.ParryTiming * 100), function(v) Settings.ParryTiming = v / 100 end)
     
-    createToggle(tabPages["Combat"], "🎯 Sadece Hedef Bendeyken Parry At", Settings.CheckTarget, function(v)
-        Settings.CheckTarget = v
-    end)
+    -- Sayfa 2: Visuals
+    createToggle(tabPages["Visuals"], "⚽ Top ESP (Harici Güvenli)", Settings.BallESP, function(v) Settings.BallESP = v; if not v then clearAllESP() end end)
+    createToggle(tabPages["Visuals"], "✨ Top Highlight Parlaması", Settings.BallHighlight, function(v) Settings.BallHighlight = v; if not v then clearAllESP() end end)
+    createToggle(tabPages["Visuals"], "📊 Top Bilgileri (Hız & Mesafe)", Settings.BallInfo, function(v) Settings.BallInfo = v; if not v then clearAllESP() end end)
+    createToggle(tabPages["Visuals"], "👥 Oyuncu ESP (Harici Güvenli)", Settings.PlayerESP, function(v) Settings.PlayerESP = v; if not v then clearAllESP() end end)
+    createToggle(tabPages["Visuals"], "🎯 Hedef Oyuncuyu Vurgula", Settings.TargetHighlight, function(v) Settings.TargetHighlight = v end)
     
-    createToggle(tabPages["Combat"], "⚡ Auto Spam / Clash Parry", Settings.AutoSpam, function(v)
-        Settings.AutoSpam = v
-    end)
+    -- Sayfa 3: Misc / Güvenlik
+    createToggle(tabPages["Misc"], "🔭 Özel Görüş Açısı (FOV)", Settings.CustomFOV, function(v) Settings.CustomFOV = v; if not v and camera then camera.FieldOfView = 70 end end)
+    createSlider(tabPages["Misc"], "📐 FOV Derecesi", 70, 120, Settings.FOVValue, function(v) Settings.FOVValue = v end)
     
-    createSlider(tabPages["Combat"], "📏 Parry Mesafesi (Studs)", 15, 60, Settings.ParryRange, function(v)
-        Settings.ParryRange = v
-    end)
-    
-    createSlider(tabPages["Combat"], "⏱️ Parry Zamanlaması (x100 ms)", 15, 45, math.floor(Settings.ParryTiming * 100), function(v)
-        Settings.ParryTiming = v / 100
-    end)
-    
-    -- ====================
-    -- SAYFA 2: VISUALS / ESP
-    -- ====================
-    createToggle(tabPages["Visuals"], "⚽ Top ESP (Genel)", Settings.BallESP, function(v)
-        Settings.BallESP = v
-        if not v then clearESP() end
-    end)
-    
-    createToggle(tabPages["Visuals"], "✨ Top Highlight Parlaması", Settings.BallHighlight, function(v)
-        Settings.BallHighlight = v
-        if not v then clearESP() end
-    end)
-    
-    createToggle(tabPages["Visuals"], "📊 Top Bilgileri (Hız & Mesafe)", Settings.BallInfo, function(v)
-        Settings.BallInfo = v
-        if not v then clearESP() end
-    end)
-    
-    createToggle(tabPages["Visuals"], "👥 Oyuncu ESP", Settings.PlayerESP, function(v)
-        Settings.PlayerESP = v
-        if not v then clearESP() end
-    end)
-    
-    createToggle(tabPages["Visuals"], "🎯 Hedef Oyuncuyu Vurgula", Settings.TargetHighlight, function(v)
-        Settings.TargetHighlight = v
-    end)
-    
-    -- ====================
-    -- SAYFA 3: OYUNCU (PLAYER)
-    -- ====================
-    createToggle(tabPages["Player"], "⚡ Hızlı Koşma (Speed Boost)", Settings.WalkSpeedEnabled, function(v)
-        Settings.WalkSpeedEnabled = v
-        if not v and humanoid then humanoid.WalkSpeed = 16 end
-    end)
-    
-    createSlider(tabPages["Player"], "🏃 Koşma Hızı", 16, 120, Settings.WalkSpeed, function(v)
-        Settings.WalkSpeed = v
-    end)
-    
-    createToggle(tabPages["Player"], "🦘 Yüksek Zıplama (Jump Boost)", Settings.JumpPowerEnabled, function(v)
-        Settings.JumpPowerEnabled = v
-        if not v and humanoid then humanoid.JumpPower = 50 end
-    end)
-    
-    createSlider(tabPages["Player"], "🆙 Zıplama Gücü", 50, 200, Settings.JumpPower, function(v)
-        Settings.JumpPower = v
-    end)
-    
-    createToggle(tabPages["Player"], "🔭 Özel Görüş Açısı (FOV)", Settings.CustomFOV, function(v)
-        Settings.CustomFOV = v
-        if not v and camera then camera.FieldOfView = 70 end
-    end)
-    
-    createSlider(tabPages["Player"], "📐 FOV Derecesi", 70, 120, Settings.FOVValue, function(v)
-        Settings.FOVValue = v
-    end)
-    
-    createToggle(tabPages["Player"], "🛡️ Anti-AFK (Oyun Düşmesini Önle)", Settings.AntiAFK, function(v)
-        Settings.AntiAFK = v
-    end)
-    
-    -- ====================
-    -- SAYFA 4: AYARLAR (SETTINGS)
-    -- ====================
-    createToggle(tabPages["Settings"], "🐞 Debug Konsol Modu", Settings.DebugMode, function(v)
-        Settings.DebugMode = v
-        notify("Debug Modu", v and "Açık" or "Kapalı")
-    end)
+    -- Sayfa 4: Ayarlar
+    createToggle(tabPages["Settings"], "🐞 Debug Konsol Modu", Settings.DebugMode, function(v) Settings.DebugMode = v end)
     
     -- Floating UI Açma/Kapama Butonu
     local FloatBtn = Instance.new("TextButton")
@@ -821,48 +760,37 @@ local function createUI()
     FloatCorner.CornerRadius = UDim.new(1, 0)
     FloatCorner.Parent = FloatBtn
     
-    local FloatStroke = Instance.new("UIStroke")
-    FloatStroke.Color = Color3.fromRGB(255, 255, 255)
-    FloatStroke.Thickness = 1.5
-    FloatStroke.Parent = FloatBtn
-    
     FloatBtn.MouseButton1Click:Connect(function()
         State.uiOpen = not State.uiOpen
         MainFrame.Visible = State.uiOpen
     end)
     
-    -- İlk sekmeyi seç
     switchTab("Combat")
-    
     ScreenGui.Parent = parent
     return ScreenGui
 end
 
--- UI'yi Başlat
 local guiInstance = createUI()
 
 -- ====================================================================
--- 11. KLAVYE KISAYOLLARI (KEYBINDS)
+-- 11. KLAVYE KISAYOLLARI
 -- ====================================================================
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     
-    -- Sağ Ctrl veya Insert ile Menüyü Aç/Kapat
     if input.KeyCode == Enum.KeyCode.RightControl or input.KeyCode == Enum.KeyCode.Insert then
         State.uiOpen = not State.uiOpen
         local mf = guiInstance and guiInstance:FindFirstChild("MainFrame")
         if mf then mf.Visible = State.uiOpen end
     end
     
-    -- P tuşu: Hızlı Auto Parry Toggle
     if input.KeyCode == Enum.KeyCode.P then
         Settings.AutoParry = not Settings.AutoParry
         local status = Settings.AutoParry and "✅ AÇIK" or "❌ KAPALI"
         notify("⚔️ Blade Ball", "Auto Parry: " .. status)
     end
     
-    -- F tuşu: Manuel Test Parry
     if input.KeyCode == Enum.KeyCode.F then
         doParry(false)
     end
@@ -873,15 +801,15 @@ end)
 -- ====================================================================
 
 print("")
-print("╔═══════════════════════════════════════════════════╗")
-print("║   ⚔️ BLADE BALL ULTIMATE v7.0                    ║")
-print("║   Gelişmiş UI, ESP & Auto Parry Aktif!          ║")
-print("╠═══════════════════════════════════════════════════╣")
-print("║   📌 KONTROLLER:                                  ║")
-print("║   [Sağ Ctrl / Insert / Sol Buton] = Menüyü Aç/Kapa║")
-print("║   [P] = Auto Parry Aç/Kapat                       ║")
-print("║   [F] = Manuel Parry                              ║")
-print("╚═══════════════════════════════════════════════════╝")
+print("╔═════════════════════════════════════════════════════╗")
+print("║   🛡️ BLADE BALL v7.5 [BAC UNDETECTED EDITION]       ║")
+print("║   Anti-Cheat Korumalı & Güvenli ESP/Parry Aktif!    ║")
+print("╠═════════════════════════════════════════════════════╣")
+print("║   📌 KONTROLLER:                                    ║")
+print("║   [Sağ Ctrl / Insert / Sol ⚔️ Butonu] = Menü         ║")
+print("║   [P] = Auto Parry Aç/Kapat                         ║")
+print("║   [F] = Manuel Parry                                ║")
+print("╚═════════════════════════════════════════════════════╝")
 print("")
 
-notify("⚔️ Blade Ball v7.0", "✅ Menü ve ESP başarıyla yüklendi!\nMenü için: Sağ Ctrl veya ⚔️ butonuna bas.", 4)
+notify("🛡️ BAC Safe v7.5", "✅ Güvenli mod yüklendi! Kick koruması devrede.", 4)

@@ -1,231 +1,160 @@
 -- bladeball.lua
--- ⚔️ BLADE BALL - PURE ZERO-LOG STEALTH AUTO PARRY
--- 🛡️ F9 Konsol Taramalarına Karşı %100 Görünmez & Tamamen Sessiz Çekirdek
+-- ⚔️ Blade Ball - Standart ve Temiz Auto Parry
 
 repeat task.wait() until game:IsLoaded()
-
--- Tüm Konsol ve Log Çıktılarını Devre Dışı Bırak (LogService / F9 Taramasını %100 Engeller)
-local print = function() end
-local warn = function() end
-local error = function() end
-if rconsoleprint then rconsoleprint = function() end end
-if rconsolewarn then rconsolewarn = function() end end
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-
-local VirtualInputManager = nil
-pcall(function() VirtualInputManager = game:GetService("VirtualInputManager") end)
+local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local player = Players.LocalPlayer
-local getTime = os.clock or tick
-local renderSignal = RunService.RenderStepped or RunService.Heartbeat
 local clamp = math.clamp or function(v, min, max) return math.max(min, math.min(max, v)) end
-local typeCheck = typeof or type
 
 -- ====================================================================
--- 1. SAVAŞ AYARLARI
+-- 1. AYARLAR
 -- ====================================================================
 
-local Config = {
-    AutoParry = true,
-    BaseRange = 40,              -- Vuruş menzili (Studs)
-    EmergencyDistance = 25,      -- Acil durum mesafesi
-    ParryCooldown = 0.18,        -- Normal vuruşlar arası bekleme
-    ClashCooldown = 0.085,       -- Yakın temas clash bekleme süresi
-}
-
-local State = {
-    lastParryTime = -999,
-    parryCount = 0
-}
+local AutoParryEnabled = true
+local BaseDistance = 35
+local ParryWindow = 0.33
+local LastParry = 0
+local Cooldown = 0.18
 
 -- ====================================================================
--- 2. DİNAMİK CANLI KARAKTER BULUCU (RESPAWN KORUMASI)
+-- 2. KARAKTER VE TOP BULMA
 -- ====================================================================
 
-local function getMyRootPart()
-    local char = player.Character or workspace:FindFirstChild(player.Name)
+local function getRootPart()
+    local char = player.Character
     if not char then return nil end
-    return char:FindFirstChild("HumanoidRootPart") or 
-           char:FindFirstChild("Torso") or 
-           char:FindFirstChild("UpperTorso") or 
-           char:FindFirstChildWhichIsA("BasePart")
+    return char:FindFirstChild("HumanoidRootPart")
 end
 
--- ====================================================================
--- 3. EVRENSEL HEDEF VE TOP BULUCU
--- ====================================================================
-
-local function isTargetMatch(targetVal)
-    if not targetVal then return false end
-    local myName = player.Name and player.Name:lower() or ""
-    local myDisplay = player.DisplayName and player.DisplayName:lower() or myName
+local function getBall()
+    local hrp = getRootPart()
+    if not hrp then return nil, false, 0, Vector3.new() end
     
-    if typeCheck(targetVal) == "Instance" then
-        return targetVal == player or targetVal == player.Character or targetVal.Name:lower() == myName
-    end
+    local myPos = hrp.Position
+    local myName = player.Name
+    local myDisplay = player.DisplayName
     
-    local str = tostring(targetVal):lower()
-    return str == myName or str == myDisplay or str:find(myName) ~= nil
-end
-
-local function findActiveBall(myPos)
+    local balls = workspace:FindFirstChild("Balls") or workspace
     local bestBall = nil
-    local minDistance = math.huge
-    local isThreat = false
-    local ballVel = Vector3.new(0, 0, 0)
+    local bestDist = math.huge
+    local isTargeted = false
+    local bestVel = Vector3.new()
     
-    local searchContainers = {}
-    local ballsFolder = workspace:FindFirstChild("Balls")
-    if ballsFolder then table.insert(searchContainers, ballsFolder) end
-    local trainingBalls = workspace:FindFirstChild("TrainingBalls")
-    if trainingBalls then table.insert(searchContainers, trainingBalls) end
-    table.insert(searchContainers, workspace)
-    
-    for _, container in ipairs(searchContainers) do
-        if container and container.GetChildren then
-            for _, obj in ipairs(container:GetChildren()) do
-                local isOtherPlayer = false
-                if Players.GetPlayerFromCharacter then
-                    pcall(function() isOtherPlayer = (Players:GetPlayerFromCharacter(obj) ~= nil) end)
+    for _, obj in ipairs(balls:GetChildren()) do
+        local part = obj:IsA("BasePart") and obj or obj:FindFirstChildWhichIsA("BasePart")
+        if part and part.Name ~= "HumanoidRootPart" then
+            local isReal = obj:GetAttribute("realBall") or part:GetAttribute("realBall") or obj.Name == "Ball" or balls ~= workspace
+            if isReal then
+                local bPos = part.Position
+                local dist = (bPos - myPos).Magnitude
+                local vel = part.AssemblyLinearVelocity or part.Velocity or Vector3.new()
+                
+                local targetAttr = obj:GetAttribute("target") or part:GetAttribute("target")
+                local targetStr = targetAttr and tostring(targetAttr) or ""
+                
+                local targeted = (targetStr == myName or targetStr == myDisplay)
+                local hasOtherTarget = (targetAttr ~= nil and not targeted)
+                
+                local dir = (myPos - bPos)
+                local movingToMe = false
+                if dir.Magnitude > 0 and vel.Magnitude > 0 then
+                    movingToMe = (vel.Unit:Dot(dir.Unit) > 0.1)
                 end
                 
-                if obj ~= player.Character and not isOtherPlayer then
-                    local part = obj:IsA("BasePart") and obj or obj:FindFirstChildWhichIsA("BasePart")
-                    if part and part.Name ~= "HumanoidRootPart" then
-                        local isReal = obj:GetAttribute("realBall") or part:GetAttribute("realBall") or
-                                       obj.Name == "Ball" or obj.Name:lower():find("ball") or (container ~= workspace)
-                        
-                        if isReal then
-                            local bPos = part.Position
-                            local dist = (bPos - myPos).Magnitude
-                            local vel = part.AssemblyLinearVelocity or part.Velocity or Vector3.new(0, 0, 0)
-                            
-                            local targetAttr = obj:GetAttribute("target") or part:GetAttribute("target") or
-                                               obj:GetAttribute("Target") or part:GetAttribute("Target") or
-                                               obj:GetAttribute("targetPlayer") or part:GetAttribute("targetPlayer")
-                            
-                            local targetedToMe = isTargetMatch(targetAttr)
-                            local hasOtherTarget = (targetAttr ~= nil and not targetedToMe)
-                            
-                            -- Yaklaşma Hızı (Dot Product)
-                            local dirToMe = (myPos - bPos)
-                            local isMovingTowards = false
-                            if dirToMe.Magnitude > 0 and vel.Magnitude > 0 then
-                                local dot = vel.Unit:Dot(dirToMe.Unit)
-                                isMovingTowards = (dot > 0.05)
-                            end
-                            
-                            -- Tehdit Kontrolü
-                            local threat = false
-                            if targetedToMe then
-                                threat = true
-                            elseif not hasOtherTarget and isMovingTowards and dist <= Config.BaseRange then
-                                threat = true
-                            elseif hasOtherTarget and isMovingTowards and dist <= 14 then
-                                threat = true
-                            end
-                            
-                            if dist < minDistance then
-                                minDistance = dist
-                                bestBall = part
-                                isThreat = threat
-                                ballVel = vel
-                            end
-                        end
-                    end
+                local isThreat = false
+                if targeted then
+                    isThreat = true
+                elseif not hasOtherTarget and movingToMe and dist <= BaseDistance then
+                    isThreat = true
+                elseif hasOtherTarget and movingToMe and dist <= 14 then
+                    isThreat = true
+                end
+                
+                if dist < bestDist then
+                    bestDist = dist
+                    bestBall = part
+                    isTargeted = isThreat
+                    bestVel = vel
                 end
             end
         end
     end
     
-    return bestBall, isThreat, minDistance, ballVel
+    return bestBall, isTargeted, bestDist, bestVel
 end
 
 -- ====================================================================
--- 4. KESİN VE DOĞAL PARRY MOTORU
+-- 3. PARRY VURUŞU
 -- ====================================================================
 
-local function executeParry(isClash)
-    local now = getTime()
-    local cooldown = isClash and Config.ClashCooldown or Config.ParryCooldown
-    
-    if (now - State.lastParryTime) < cooldown then
-        return
-    end
-    
-    State.lastParryTime = now
-    State.parryCount = State.parryCount + 1
+local function parry()
+    local now = os.clock()
+    if (now - LastParry) < Cooldown then return end
+    LastParry = now
     
     task.spawn(function()
         pcall(function()
-            if VirtualInputManager then
-                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.F, false, game)
-                task.wait(0.012)
-                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.F, false, game)
-            end
+            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.F, false, game)
+            task.wait(0.015)
+            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.F, false, game)
         end)
     end)
 end
 
 -- ====================================================================
--- 5. ANA DÖNGÜ (RENDERSTEPPED - 0 MS GECİKME)
+-- 4. DÖNGÜ (RENDERSTEPPED)
 -- ====================================================================
 
+local renderSignal = RunService.RenderStepped or RunService.Heartbeat
 renderSignal:Connect(function()
-    if not Config.AutoParry then return end
+    if not AutoParryEnabled then return end
     
-    local hrp = getMyRootPart()
+    local ball, isTargeted, dist, vel = getBall()
+    if not ball or not isTargeted then return end
+    
+    local speed = vel.Magnitude
+    local hrp = getRootPart()
     if not hrp then return end
     
-    local myPos = hrp.Position
-    local ball, isThreat, distance, velocity = findActiveBall(myPos)
-    if not ball or not isThreat then return end
-    
-    local speed = velocity.Magnitude
-    local dirToMe = (myPos - ball.Position)
-    
-    -- Yaklaşma Hızı
+    local dir = (hrp.Position - ball.Position)
     local approachSpeed = speed
-    if distance > 0 and speed > 0 then
-        local dot = velocity:Dot(dirToMe.Unit)
+    if dist > 0 and speed > 0 then
+        local dot = vel:Dot(dir.Unit)
         if dot > 0 then
             approachSpeed = dot
         end
     end
     
     local effectiveSpeed = math.max(approachSpeed, speed, 1)
-    local timeToHit = distance / effectiveSpeed
+    local timeToHit = dist / effectiveSpeed
     
-    -- 1. Yakın Temas / Clash
-    if distance <= 16 then
-        executeParry(true)
+    if dist <= 15 then
+        parry()
         return
     end
     
-    -- 2. Hıza Göre Dinamik Vuruş Eşiği
-    local dynamicTargetTime = clamp(0.30 + (speed / 1200), 0.30, 0.45)
-    local dynamicMaxDistance = clamp(speed * dynamicTargetTime, 18, 48)
+    local dynamicTime = clamp(0.30 + (speed / 1200), 0.30, 0.45)
+    local dynamicDist = clamp(speed * dynamicTime, 18, 48)
     
-    if timeToHit <= dynamicTargetTime or distance <= dynamicMaxDistance then
-        executeParry(false)
+    if timeToHit <= dynamicTime or dist <= dynamicDist then
+        parry()
     end
 end)
 
 -- ====================================================================
--- 6. KISAYOL TUŞLARI
+-- 5. KONTROLLER
 -- ====================================================================
 
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed then return end
     if input.KeyCode == Enum.KeyCode.P then
-        Config.AutoParry = not Config.AutoParry
-    end
-    
-    if input.KeyCode == Enum.KeyCode.F then
-        executeParry(true)
+        AutoParryEnabled = not AutoParryEnabled
+    elseif input.KeyCode == Enum.KeyCode.F then
+        parry()
     end
 end)
